@@ -190,12 +190,15 @@ struct FolderExplorerView: View {
     private var selectedEntries: [DirectoryEntry] { inventory?.entries.filter { selected.contains($0.id) } ?? [] }
     private var localEntries: [DirectoryEntry] { selectedEntries.filter { !$0.isICloud } }
     private var iCloudEntries: [DirectoryEntry] { selectedEntries.filter { $0.isICloud && $0.isDownloaded } }
-    private var displayedEntries: [DirectoryEntry] {
+    private var matchingEntries: [DirectoryEntry] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let entries = (inventory?.entries ?? []).filter {
+        return (inventory?.entries ?? []).filter {
             (query.isEmpty || $0.url.lastPathComponent.localizedCaseInsensitiveContains(query))
                 && filter.includes($0)
         }
+    }
+    private var displayedEntries: [DirectoryEntry] {
+        let entries = matchingEntries
         let sorted: [DirectoryEntry]
         switch sort {
         case .name:
@@ -222,7 +225,16 @@ struct FolderExplorerView: View {
                     Text("Measure and act on exactly what is inside a folder—no guesswork.").foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Choose folder…") { chooseRoot() }
+                Button { chooseRoot() } label: { Label("Choose", systemImage: "folder.badge.plus") }
+                    .help("Choose a folder to inspect")
+                Menu {
+                    Button("Home") { navigate(to: FileManager.default.homeDirectoryForCurrentUser) }
+                    Button("Desktop") { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")) }
+                    Button("Downloads") { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")) }
+                    Button("Documents") { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents")) }
+                } label: {
+                    Label("Quick folders", systemImage: "house.and.flag")
+                }
                 Menu {
                     ForEach(model.mountedVolumes) { volume in
                         Button(volume.name) { navigate(to: volume.url) }
@@ -230,12 +242,14 @@ struct FolderExplorerView: View {
                 } label: {
                     Label("Volumes", systemImage: "externaldrive.fill")
                 }
-                Picker("View", selection: $presentation) {
+                Picker(selection: $presentation, label: EmptyView()) {
                     Image(systemName: "list.bullet").tag(ExplorerPresentation.list)
                     Image(systemName: "square.grid.2x2").tag(ExplorerPresentation.grid)
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
                 .frame(width: 86)
+                .fixedSize()
             }
             .padding(.horizontal, 28).padding(.vertical, 18)
             Divider()
@@ -269,6 +283,9 @@ struct FolderExplorerView: View {
                 Spacer()
                 if model.isInspectingDirectory { ProgressView().controlSize(.small) }
                 Button { Task { await model.inspectDirectory(inventory.root) } } label: { Image(systemName: "arrow.clockwise") }
+                    .help("Refresh this folder")
+                Button { model.openInFinder(inventory.root) } label: { Image(systemName: "arrow.up.forward.app") }
+                    .help("Open current folder in Finder")
             }
             .padding(.horizontal, 28).padding(.vertical, 10)
             .background(.quaternary.opacity(0.5))
@@ -309,6 +326,10 @@ struct FolderExplorerView: View {
                 if !selected.isEmpty {
                     Text("\(selected.count) selected").font(.caption.weight(.medium)).foregroundStyle(.indigo)
                 }
+                Button("Select all") { selectAll() }
+                    .disabled(matchingEntries.isEmpty)
+                Button("Clear") { clearSelection() }
+                    .disabled(selected.isEmpty)
             }
             .padding(.horizontal, 28).padding(.vertical, 8)
             .background(.quaternary.opacity(0.25))
@@ -324,10 +345,7 @@ struct FolderExplorerView: View {
                     .padding(22)
                 }
             }
-            let matchingCount = inventory.entries.filter { entry in
-                let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-                return (query.isEmpty || entry.url.lastPathComponent.localizedCaseInsensitiveContains(query)) && filter.includes(entry)
-            }.count
+            let matchingCount = matchingEntries.count
             if matchingCount > visibleLimit {
                 Button("Load next \(min(100, matchingCount - visibleLimit)) items") { visibleLimit += 100 }
                     .buttonStyle(.bordered)
@@ -365,6 +383,18 @@ struct FolderExplorerView: View {
     private func toggle(_ entry: DirectoryEntry) {
         withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
             if selected.contains(entry.id) { selected.remove(entry.id) } else { selected.insert(entry.id) }
+        }
+    }
+
+    private func selectAll() {
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
+            selected.formUnion(matchingEntries.map(\.id))
+        }
+    }
+
+    private func clearSelection() {
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
+            selected.removeAll()
         }
     }
 

@@ -13,6 +13,7 @@
 - Review-first cleanup: each recommendation and review-only location opens in Explorer for item-level measurement and selection
 - Expanded review locations and JavaScript package coverage: npm, Yarn, Bun, node-gyp, Corepack, pnpm, project-local stores, and build caches
 - Finder-style Explorer search, iCloud/file-type filters, name/size/kind sorting, and visible click selection feedback
+- Explorer quick locations (Home, Desktop, Downloads, Documents), current-folder Finder opening, and select-all/clear controls
 - Full Disk Access unavailable probes are now informational rather than misleading warnings
 - Full Disk Access concierge, universal Intel + Apple Silicon builds, direct-download DMG, and native icon
 

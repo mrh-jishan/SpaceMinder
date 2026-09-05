@@ -299,6 +299,10 @@ final class StorageViewModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
+    func openInFinder(_ url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+
     func openFullDiskAccess() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!
         NSWorkspace.shared.open(url)

@@ -17,7 +17,7 @@ Each release includes its versioned DMG, a permanent `SpaceMinder-latest.dmg` li
 - Fixed safe-cleanup allow-list; the interface cannot submit arbitrary deletion paths
 - Generated-code final confirmation for every destructive action, plus app-running checks for Chrome, Xcode, and Docker
 - Local cleanup history, custom **scan-only** folders, and optional launch-at-login
-- Finder-style Folder Explorer: instant shallow metadata listings, lazy 100-item rendering, search, file/iCloud filters, name/size/kind sorting, list/grid views, visible selection, double-click navigation, per-folder on-demand size measurement, Finder reveal, and reversible Trash actions
+- Finder-style Folder Explorer: Home/Desktop/Downloads/Documents shortcuts, current-folder Finder opening, instant shallow metadata listings, lazy 100-item rendering, search, file/iCloud filters, name/size/kind sorting, icon-only list/grid switching, select-all/clear controls, visible selection, double-click navigation, per-folder on-demand size measurement, Finder reveal, and reversible Trash actions
 - Duplicate Radar: efficient two-pass SHA-256 matching that hashes only equal-size files; it is local-only and never deletes files
 - Developer Reclaim Planner: identifies re-creatable `node_modules`, Yarn/pnpm project stores, JavaScript build output, virtual environments, Xcode artifacts, and project caches before you remove anything
 - iCloud Drive local-copy offloading, which preserves iCloud originals while freeing downloaded local copies
