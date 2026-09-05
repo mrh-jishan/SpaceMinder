@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 private enum Workspace: String, CaseIterable, Identifiable {
-    case dashboard, discovery, duplicates, reclaim, explorer, pro, preferences, privacy
+    case dashboard, duplicates, reclaim, explorer, pro, preferences, privacy
     var id: String { rawValue }
 }
 
@@ -18,9 +18,8 @@ struct ContentView: View {
             Group {
                 switch workspace ?? .dashboard {
                 case .dashboard: dashboard
-                case .discovery: DiscoveryView(onOpenExplorer: { workspace = .explorer })
-                case .duplicates: DiscoveryView(onOpenExplorer: { workspace = .explorer }, initialTool: .duplicates, onReturnToOverview: { workspace = .discovery })
-                case .reclaim: DiscoveryView(onOpenExplorer: { workspace = .explorer }, initialTool: .reclaim, onReturnToOverview: { workspace = .discovery })
+                case .duplicates: DiscoveryView(onOpenExplorer: { workspace = .explorer }, tool: .duplicates)
+                case .reclaim: DiscoveryView(onOpenExplorer: { workspace = .explorer }, tool: .reclaim)
                 case .explorer: FolderExplorerView()
                 case .pro: ProWorkspaceView()
                 case .preferences: PreferencesWorkspaceView()
@@ -72,8 +71,11 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button { workspace = .discovery } label: {
-                Label("Discovery Lab", systemImage: "sparkles")
+            Menu {
+                Button("Duplicate Radar") { workspace = .duplicates }
+                Button("Reclaim Planner") { workspace = .reclaim }
+            } label: {
+                Label("Discovery", systemImage: "sparkles")
             }
             .buttonStyle(.bordered)
             if model.isCleaning { ProgressView().controlSize(.small) }
@@ -326,7 +328,6 @@ private struct Sidebar: View {
                 Label("Dashboard", systemImage: "internaldrive").tag(Workspace.dashboard)
             }
             Section("Workspaces") {
-                Label("Discovery overview", systemImage: "sparkles").tag(Workspace.discovery)
                 Label("Duplicate Radar", systemImage: "doc.on.doc").tag(Workspace.duplicates)
                 Label("Reclaim Planner", systemImage: "hammer").tag(Workspace.reclaim)
                 Label("Folder Explorer", systemImage: "folder.badge.gearshape").tag(Workspace.explorer)

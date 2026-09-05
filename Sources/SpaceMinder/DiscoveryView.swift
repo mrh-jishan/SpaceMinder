@@ -30,17 +30,13 @@ struct PermissionCard: View {
 struct DiscoveryView: View {
     @EnvironmentObject private var model: StorageViewModel
     let onOpenExplorer: () -> Void
-    let initialTool: DiscoveryTool?
-    let onReturnToOverview: () -> Void
+    let tool: DiscoveryTool
     @State private var folders = DiscoveryView.defaultFolders
     @State private var expandedDuplicateID: String?
-    @State private var activeTool: DiscoveryTool?
 
-    init(onOpenExplorer: @escaping () -> Void, initialTool: DiscoveryTool? = nil, onReturnToOverview: @escaping () -> Void = {}) {
+    init(onOpenExplorer: @escaping () -> Void, tool: DiscoveryTool) {
         self.onOpenExplorer = onOpenExplorer
-        self.initialTool = initialTool
-        self.onReturnToOverview = onReturnToOverview
-        _activeTool = State(initialValue: initialTool)
+        self.tool = tool
     }
 
     private static var defaultFolders: [URL] {
@@ -50,44 +46,12 @@ struct DiscoveryView: View {
 
     var body: some View {
         WorkspaceScrollPage {
-            Group {
-                switch activeTool {
-                case .duplicates: duplicateWorkspace
-                case .reclaim: reclaimWorkspace
-                case nil: discoveryHome
-                }
+            switch tool {
+            case .duplicates: duplicateWorkspace
+            case .reclaim: reclaimWorkspace
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private var discoveryHome: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Discovery Lab").font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text("Choose one focused analysis at a time so the results stay fast and readable.").foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(action: onOpenExplorer) { Label("Folder Explorer", systemImage: "folder.badge.gearshape") }
-                    .buttonStyle(.bordered)
-            }
-            HStack(spacing: 12) {
-                DiscoveryToolButton(
-                    title: "Duplicate Radar",
-                    detail: "Find exact byte-for-byte copies with a two-pass local scan.",
-                    icon: "doc.on.doc.fill",
-                    action: { activeTool = .duplicates }
-                )
-                DiscoveryToolButton(
-                    title: "Reclaim Planner",
-                    detail: "Find re-creatable developer dependencies and build output.",
-                    icon: "hammer.fill",
-                    action: { activeTool = .reclaim }
-                )
-            }
-            privacyNote
-        }
     }
 
     private var duplicateWorkspace: some View {
@@ -108,11 +72,6 @@ struct DiscoveryView: View {
 
     private func toolHeader(title: String, subtitle: String) -> some View {
         HStack(alignment: .top) {
-            Button {
-                if initialTool == nil { activeTool = nil }
-                else { onReturnToOverview() }
-            } label: { Label("Discovery", systemImage: "chevron.left") }
-                .buttonStyle(.bordered)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 27, weight: .bold, design: .rounded))
                 Text(subtitle).foregroundStyle(.secondary)
@@ -242,31 +201,6 @@ struct DiscoveryView: View {
 
 enum DiscoveryTool {
     case duplicates, reclaim
-}
-
-private struct DiscoveryToolButton: View {
-    let title: String
-    let detail: String
-    let icon: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: icon).font(.title3).foregroundStyle(.indigo)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.headline)
-                    Text(detail).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
-            }
-            .padding(15)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 struct FolderExplorerView: View {

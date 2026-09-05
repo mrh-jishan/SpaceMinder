@@ -23,7 +23,7 @@ Each release includes its versioned DMG, a permanent `SpaceMinder-latest.dmg` li
 - iCloud Drive local-copy offloading, which preserves iCloud originals while freeing downloaded local copies
 - Trash as a measured, first-class cleanup target; nonempty-only local AI model stores for Hugging Face, Ollama, LM Studio, PyTorch, and Whisper; re-downloadable npm, Yarn, Bun, node-gyp, and Corepack caches; and review-first pnpm stores
 - Space Pulse: persistent local scan history, a configurable free-space budget, and attached-volume visibility
-- Compact responsive native workspaces with restrained motion for Dashboard, Discovery Overview, Duplicate Radar, Reclaim Planner, Folder Explorer, Pro toolkit, Preferences, and Privacy—no blocking modal navigation
+- Compact responsive native workspaces with restrained motion for Dashboard, Duplicate Radar, Reclaim Planner, Folder Explorer, Pro toolkit, Preferences, and Privacy—no blocking modal navigation
 - No account, network traffic, analytics, or cloud storage
 
 ## Run during development
