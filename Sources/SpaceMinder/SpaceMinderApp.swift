@@ -370,6 +370,19 @@ final class StorageViewModel: ObservableObject {
         if let root = inventory?.root { Task { await inspectDirectory(root); await scan() } }
     }
 
+    @discardableResult
+    func trashFolder(_ url: URL) -> Bool {
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            notice = "Moved \(url.lastPathComponent) to Trash. It can be restored until Trash is emptied."
+            Task { await scan() }
+            return true
+        } catch {
+            notice = "Could not move \(url.lastPathComponent) to Trash: \(error.localizedDescription)"
+            return false
+        }
+    }
+
     func removeLocalICloudCopies(_ entries: [DirectoryEntry]) {
         var offloaded = 0
         var failures = 0

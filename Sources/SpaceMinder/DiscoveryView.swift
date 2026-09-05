@@ -279,6 +279,7 @@ struct FolderExplorerView: View {
     @State private var searchText = ""
     @State private var visibleLimit = 100
     @State private var focusedEntryID: String?
+    @State private var backHistory: [URL] = []
 
     private var inventory: DirectoryInventory? { model.inventory }
     private var focusedEntry: DirectoryEntry? { inventory?.entries.first { $0.id == focusedEntryID } }
@@ -310,6 +311,11 @@ struct FolderExplorerView: View {
             }
         }
         return Array(sorted.prefix(visibleLimit))
+    }
+    private var canTrashCurrentFolder: Bool {
+        guard let root = inventory?.root else { return false }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return root.path.hasPrefix(home.path + "/")
     }
 
     var body: some View {
@@ -377,8 +383,9 @@ struct FolderExplorerView: View {
     @ViewBuilder private func explorer(_ inventory: DirectoryInventory) -> some View {
         VStack(spacing: 0) {
             HStack {
-                Button { openParent(of: inventory.root) } label: { Image(systemName: "chevron.left") }
-                    .disabled(inventory.root.path == FileManager.default.homeDirectoryForCurrentUser.path)
+                Button { goBack(from: inventory.root) } label: { Image(systemName: "chevron.left") }
+                    .disabled(backHistory.isEmpty && inventory.root.path == FileManager.default.homeDirectoryForCurrentUser.path)
+                    .help("Back one folder")
                 Image(systemName: "folder.fill").foregroundStyle(.indigo)
                 Text(inventory.root.path).font(.subheadline.monospaced()).lineLimit(1)
                 Spacer()
@@ -387,6 +394,9 @@ struct FolderExplorerView: View {
                     .help("Refresh this folder")
                 Button { model.openInFinder(inventory.root) } label: { Image(systemName: "arrow.up.forward.app") }
                     .help("Open current folder in Finder")
+                Button(role: .destructive) { requestCurrentFolderTrash(inventory.root) } label: { Image(systemName: "trash") }
+                    .help("Move current folder to Trash and return to its parent")
+                    .disabled(!canTrashCurrentFolder)
             }
             .padding(.horizontal, 28).padding(.vertical, 10)
             .background(.quaternary.opacity(0.5))
@@ -475,12 +485,21 @@ struct FolderExplorerView: View {
         if panel.runModal() == .OK, let url = panel.url { navigate(to: url) }
     }
 
-    private func openParent(of root: URL) {
-        navigate(to: root.deletingLastPathComponent())
+    private func goBack(from root: URL) {
+        if let previous = backHistory.popLast() {
+            navigate(to: previous, recordHistory: false)
+        } else {
+            navigate(to: root.deletingLastPathComponent(), recordHistory: false)
+        }
     }
 
-    private func navigate(to url: URL) {
+    private func navigate(to url: URL, recordHistory: Bool = true) {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            if recordHistory, let current = inventory?.root,
+               current.standardizedFileURL != url.standardizedFileURL {
+                backHistory.append(current)
+                backHistory = Array(backHistory.suffix(50))
+            }
             selected.removeAll()
             focusedEntryID = nil
             visibleLimit = 100
@@ -570,6 +589,23 @@ struct FolderExplorerView: View {
             perform: {
                 model.trash(entries)
                 selected.removeAll()
+            }
+        )
+    }
+
+    private func requestCurrentFolderTrash(_ root: URL) {
+        guard canTrashCurrentFolder else { return }
+        let fallback = root.deletingLastPathComponent()
+        destructiveRequest = DestructiveActionRequest(
+            title: "Move the current folder to Trash?",
+            detail: "\(root.path) will move to Trash. SpaceMinder will then return to \(fallback.path). This is reversible until Trash is emptied.",
+            items: [root.path],
+            perform: {
+                guard model.trashFolder(root) else { return }
+                selected.removeAll()
+                focusedEntryID = nil
+                backHistory.removeAll()
+                Task { await model.inspectDirectory(fallback) }
             }
         )
     }
