@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 private enum Workspace: String, CaseIterable, Identifiable {
-    case dashboard, discovery, explorer, pro, preferences, privacy
+    case dashboard, discovery, duplicates, reclaim, explorer, pro, preferences, privacy
     var id: String { rawValue }
 }
 
@@ -19,6 +19,8 @@ struct ContentView: View {
                 switch workspace ?? .dashboard {
                 case .dashboard: dashboard
                 case .discovery: DiscoveryView(onOpenExplorer: { workspace = .explorer })
+                case .duplicates: DiscoveryView(onOpenExplorer: { workspace = .explorer }, initialTool: .duplicates, onReturnToOverview: { workspace = .discovery })
+                case .reclaim: DiscoveryView(onOpenExplorer: { workspace = .explorer }, initialTool: .reclaim, onReturnToOverview: { workspace = .discovery })
                 case .explorer: FolderExplorerView()
                 case .pro: ProWorkspaceView()
                 case .preferences: PreferencesWorkspaceView()
@@ -324,7 +326,9 @@ private struct Sidebar: View {
                 Label("Dashboard", systemImage: "internaldrive").tag(Workspace.dashboard)
             }
             Section("Workspaces") {
-                Label("Discovery Lab", systemImage: "sparkles").tag(Workspace.discovery)
+                Label("Discovery overview", systemImage: "sparkles").tag(Workspace.discovery)
+                Label("Duplicate Radar", systemImage: "doc.on.doc").tag(Workspace.duplicates)
+                Label("Reclaim Planner", systemImage: "hammer").tag(Workspace.reclaim)
                 Label("Folder Explorer", systemImage: "folder.badge.gearshape").tag(Workspace.explorer)
                 Label("Pro toolkit", systemImage: "crown").tag(Workspace.pro)
             }

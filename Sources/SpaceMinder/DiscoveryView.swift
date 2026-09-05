@@ -30,9 +30,18 @@ struct PermissionCard: View {
 struct DiscoveryView: View {
     @EnvironmentObject private var model: StorageViewModel
     let onOpenExplorer: () -> Void
+    let initialTool: DiscoveryTool?
+    let onReturnToOverview: () -> Void
     @State private var folders = DiscoveryView.defaultFolders
     @State private var expandedDuplicateID: String?
     @State private var activeTool: DiscoveryTool?
+
+    init(onOpenExplorer: @escaping () -> Void, initialTool: DiscoveryTool? = nil, onReturnToOverview: @escaping () -> Void = {}) {
+        self.onOpenExplorer = onOpenExplorer
+        self.initialTool = initialTool
+        self.onReturnToOverview = onReturnToOverview
+        _activeTool = State(initialValue: initialTool)
+    }
 
     private static var defaultFolders: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -99,7 +108,10 @@ struct DiscoveryView: View {
 
     private func toolHeader(title: String, subtitle: String) -> some View {
         HStack(alignment: .top) {
-            Button { activeTool = nil } label: { Label("Discovery", systemImage: "chevron.left") }
+            Button {
+                if initialTool == nil { activeTool = nil }
+                else { onReturnToOverview() }
+            } label: { Label("Discovery", systemImage: "chevron.left") }
                 .buttonStyle(.bordered)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 27, weight: .bold, design: .rounded))
@@ -228,7 +240,7 @@ struct DiscoveryView: View {
     }
 }
 
-private enum DiscoveryTool {
+enum DiscoveryTool {
     case duplicates, reclaim
 }
 
