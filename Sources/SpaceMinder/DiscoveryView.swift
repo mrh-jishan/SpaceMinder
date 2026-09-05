@@ -6,26 +6,24 @@ struct PermissionCard: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: model.protectedLocationsAvailable ? "checkmark.shield.fill" : "shield.lefthalf.filled")
+            Image(systemName: model.protectedLocationsAvailable ? "checkmark.shield.fill" : "shield.fill")
                 .font(.title2)
-                .foregroundStyle(model.protectedLocationsAvailable ? .green : .orange)
+                .foregroundStyle(model.protectedLocationsAvailable ? .green : .blue)
             VStack(alignment: .leading, spacing: 4) {
-                Text(model.protectedLocationsAvailable ? "Full scan access is available" : "Optional: enable Full Disk Access")
+                Text(model.protectedLocationsAvailable ? "Full scan access is available" : "Full Disk Access status is informational")
                     .fontWeight(.semibold)
-                Text(model.protectedLocationsAvailable ? "SpaceMinder can include protected app data in its storage measurements." : "macOS is limiting protected app-data measurements. Enable this only if you want a more complete system-wide scan.")
+                Text(model.protectedLocationsAvailable ? "SpaceMinder can include protected app data in its storage measurements." : "macOS does not expose a reliable app-readable Full Disk Access status. If you already enabled SpaceMinder in Privacy settings, no action is needed.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if !model.protectedLocationsAvailable {
-                Button("Open Privacy Settings") { model.openFullDiskAccess() }
-                    .buttonStyle(.bordered)
-            } else {
-                Button("Refresh") { model.refreshPermissionStatus() }
-                    .buttonStyle(.bordered)
+            Button(model.protectedLocationsAvailable ? "Refresh" : "Open Privacy Settings") {
+                if model.protectedLocationsAvailable { model.refreshPermissionStatus() }
+                else { model.openFullDiskAccess() }
             }
+            .buttonStyle(.bordered)
         }
         .padding(15)
-        .background(.orange.opacity(model.protectedLocationsAvailable ? 0.04 : 0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background((model.protectedLocationsAvailable ? Color.green : Color.blue).opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -42,7 +40,7 @@ struct DiscoveryView: View {
 
     var body: some View {
         WorkspaceScrollPage {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Discovery Lab").font(.system(size: 30, weight: .bold, design: .rounded))
@@ -92,8 +90,8 @@ struct DiscoveryView: View {
             }
             Text(model.duplicateStatus).font(.caption).foregroundStyle(.secondary)
         }
-        .padding(20)
-        .background(.indigo.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(16)
+        .background(.indigo.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     @ViewBuilder private var results: some View {
@@ -162,8 +160,7 @@ struct DiscoveryView: View {
                 }
             }
         }
-        .padding(20)
-        .background(.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.vertical, 4)
     }
 
     private func chooseFolders() {
@@ -184,7 +181,9 @@ struct FolderExplorerView: View {
     @State private var selected = Set<String>()
     @State private var destructiveRequest: DestructiveActionRequest?
     @State private var presentation: ExplorerPresentation = .list
-    @State private var sortBySize = false
+    @State private var sort: ExplorerSort = .name
+    @State private var filter: ExplorerFilter = .all
+    @State private var searchText = ""
     @State private var visibleLimit = 100
 
     private var inventory: DirectoryInventory? { model.inventory }
@@ -192,8 +191,26 @@ struct FolderExplorerView: View {
     private var localEntries: [DirectoryEntry] { selectedEntries.filter { !$0.isICloud } }
     private var iCloudEntries: [DirectoryEntry] { selectedEntries.filter { $0.isICloud && $0.isDownloaded } }
     private var displayedEntries: [DirectoryEntry] {
-        let entries = inventory?.entries ?? []
-        let sorted = sortBySize ? entries.sorted { $0.bytes > $1.bytes } : entries.sorted { $0.url.lastPathComponent.localizedCaseInsensitiveCompare($1.url.lastPathComponent) == .orderedAscending }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let entries = (inventory?.entries ?? []).filter {
+            (query.isEmpty || $0.url.lastPathComponent.localizedCaseInsensitiveContains(query))
+                && filter.includes($0)
+        }
+        let sorted: [DirectoryEntry]
+        switch sort {
+        case .name:
+            sorted = entries.sorted { $0.url.lastPathComponent.localizedCaseInsensitiveCompare($1.url.lastPathComponent) == .orderedAscending }
+        case .largest:
+            sorted = entries.sorted {
+                if $0.isMeasured != $1.isMeasured { return $0.isMeasured }
+                return $0.bytes > $1.bytes
+            }
+        case .kind:
+            sorted = entries.sorted {
+                if $0.isDirectory != $1.isDirectory { return $0.isDirectory }
+                return $0.url.lastPathComponent.localizedCaseInsensitiveCompare($1.url.lastPathComponent) == .orderedAscending
+            }
+        }
         return Array(sorted.prefix(visibleLimit))
     }
 
@@ -231,6 +248,9 @@ struct FolderExplorerView: View {
             }
         }
         .frame(minWidth: 920, minHeight: 640)
+        .onChange(of: searchText) { _ in visibleLimit = 100 }
+        .onChange(of: filter) { _ in visibleLimit = 100 }
+        .onChange(of: sort) { _ in visibleLimit = 100 }
         .sheet(item: $destructiveRequest) { request in
             SafetyConfirmationSheet(request: request) {
                 request.perform()
@@ -254,10 +274,9 @@ struct FolderExplorerView: View {
             .background(.quaternary.opacity(0.5))
 
             HStack(spacing: 10) {
-                Text("\(inventory.entries.count) direct items · instant metadata view").font(.caption).foregroundStyle(.secondary)
+                Text("\(displayedEntries.count) of \(inventory.entries.count) direct items").font(.caption).foregroundStyle(.secondary)
                 if inventory.inaccessibleItems > 0 { Text("\(inventory.inaccessibleItems) protected item(s) skipped").font(.caption).foregroundStyle(.orange) }
                 Spacer()
-                Toggle("Largest first", isOn: $sortBySize).toggleStyle(.checkbox).font(.caption)
                 if !iCloudEntries.isEmpty {
                     Button("Remove local iCloud copies") { requestICloudEviction() }
                         .buttonStyle(.bordered)
@@ -267,6 +286,32 @@ struct FolderExplorerView: View {
                     .disabled(localEntries.isEmpty)
             }
             .padding(.horizontal, 28).padding(.vertical, 9)
+
+            HStack(spacing: 8) {
+                TextField("Filter items", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 260)
+                Picker("Filter", selection: $filter) {
+                    ForEach(ExplorerFilter.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 150)
+                Picker("Sort", selection: $sort) {
+                    ForEach(ExplorerSort.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 145)
+                Spacer()
+                if !selected.isEmpty {
+                    Text("\(selected.count) selected").font(.caption.weight(.medium)).foregroundStyle(.indigo)
+                }
+            }
+            .padding(.horizontal, 28).padding(.vertical, 8)
+            .background(.quaternary.opacity(0.25))
 
             if presentation == .list {
                 List(displayedEntries, selection: $selected) { entry in ExplorerEntryRow(entry: entry, selected: selected.contains(entry.id), isMeasuring: model.measuringEntries.contains(entry.id), toggle: { toggle(entry) }, open: { open(entry) }, reveal: { model.reveal(entry.url) }, measure: { Task { await model.measureDirectoryEntry(entry) } }) }
@@ -279,8 +324,12 @@ struct FolderExplorerView: View {
                     .padding(22)
                 }
             }
-            if inventory.entries.count > visibleLimit {
-                Button("Load next \(min(100, inventory.entries.count - visibleLimit)) items") { visibleLimit += 100 }
+            let matchingCount = inventory.entries.filter { entry in
+                let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                return (query.isEmpty || entry.url.lastPathComponent.localizedCaseInsensitiveContains(query)) && filter.includes(entry)
+            }.count
+            if matchingCount > visibleLimit {
+                Button("Load next \(min(100, matchingCount - visibleLimit)) items") { visibleLimit += 100 }
                     .buttonStyle(.bordered)
                     .padding(.vertical, 11)
             }
@@ -356,6 +405,41 @@ struct FolderExplorerView: View {
 
 private enum ExplorerPresentation: Hashable { case list, grid }
 
+private enum ExplorerSort: String, CaseIterable, Identifiable {
+    case name, largest, kind
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .name: "Name"
+        case .largest: "Largest measured"
+        case .kind: "Folders first"
+        }
+    }
+}
+
+private enum ExplorerFilter: String, CaseIterable, Identifiable {
+    case all, folders, files, iCloudLocal, iCloudOnline
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .all: "All items"
+        case .folders: "Folders"
+        case .files: "Files"
+        case .iCloudLocal: "iCloud local"
+        case .iCloudOnline: "iCloud online"
+        }
+    }
+    func includes(_ entry: DirectoryEntry) -> Bool {
+        switch self {
+        case .all: true
+        case .folders: entry.isDirectory
+        case .files: !entry.isDirectory
+        case .iCloudLocal: entry.isICloud && entry.isDownloaded
+        case .iCloudOnline: entry.isICloud && !entry.isDownloaded
+        }
+    }
+}
+
 private struct ExplorerEntryRow: View {
     let entry: DirectoryEntry
     let selected: Bool
@@ -383,6 +467,8 @@ private struct ExplorerEntryRow: View {
             Button("Reveal", action: reveal).buttonStyle(.link)
         }
         .contentShape(Rectangle())
+        .background(selected ? .indigo.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onTapGesture { toggle() }
         .onTapGesture(count: 2, perform: open)
         .animation(.spring(response: 0.22, dampingFraction: 0.86), value: selected)
     }
@@ -408,6 +494,7 @@ private struct ExplorerEntryTile: View {
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
         .background(selected ? .indigo.opacity(0.10) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture { toggle() }
         .onTapGesture(count: 2, perform: open)
         .animation(.spring(response: 0.22, dampingFraction: 0.86), value: selected)
     }

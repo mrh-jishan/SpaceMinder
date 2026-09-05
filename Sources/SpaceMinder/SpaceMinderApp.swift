@@ -54,6 +54,11 @@ struct StorageTarget: Identifiable, Hashable {
     static let cleanup: [StorageTarget] = [
         .init(id: "user-caches", title: "Application caches", detail: "Temporary data apps can recreate. Quit apps before cleaning.", url: home("Library/Caches"), kind: .contents, safety: .safe, appsToQuit: []),
         .init(id: "npm-cache", title: "npm download cache", detail: "Downloaded package archives, never project source or node_modules.", url: home(".npm/_cacache"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "yarn-cache", title: "Yarn cache", detail: "Yarn Classic download cache. It can be restored from package registries.", url: home("Library/Caches/Yarn"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "yarn-cache-alt", title: "Yarn alternate cache", detail: "Yarn cache used by some installations. Packages download again when needed.", url: home(".cache/yarn"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "bun-cache", title: "Bun package cache", detail: "Downloaded Bun packages. Projects can restore them with Bun.", url: home(".bun/install/cache"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "node-gyp-cache", title: "Node build cache", detail: "Node-gyp headers and compiled build prerequisites. They can be recreated.", url: home(".cache/node-gyp"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "corepack-cache", title: "Corepack package-manager cache", detail: "Downloaded package-manager releases for npm, Yarn, and pnpm.", url: home("Library/Caches/node/corepack"), kind: .directory, safety: .safe, appsToQuit: []),
         .init(id: "huggingface-cache", title: "Hugging Face models", detail: "Downloaded AI models. They will download again if used.", url: home(".cache/huggingface"), kind: .directory, safety: .redownloadable, appsToQuit: []),
         .init(id: "xcode-device-support", title: "Xcode iOS DeviceSupport", detail: "Device symbols used to debug connected iPhones and iPads.", url: home("Library/Developer/Xcode/iOS DeviceSupport"), kind: .directory, safety: .redownloadable, appsToQuit: ["Xcode"]),
         .init(id: "chrome-ai-model", title: "Chrome on-device AI model", detail: "Downloaded model only; bookmarks, passwords, and history stay intact.", url: home("Library/Application Support/Google/Chrome/OptGuideOnDeviceModel"), kind: .directory, safety: .redownloadable, appsToQuit: ["Google Chrome"]),
@@ -63,11 +68,22 @@ struct StorageTarget: Identifiable, Hashable {
 
     static let insights: [StorageTarget] = [
         .init(id: "simulators", title: "Xcode simulators", detail: "Remove unused devices in Xcode → Window → Devices and Simulators.", url: home("Library/Developer/CoreSimulator"), kind: .directory, safety: .redownloadable, appsToQuit: ["Xcode"]),
-        .init(id: "pnpm", title: "pnpm store", detail: "Run `pnpm store prune` to remove unreferenced package versions.", url: home("Library/pnpm"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "derived-data", title: "Xcode Derived Data", detail: "Build indexes and intermediates that Xcode can recreate.", url: home("Library/Developer/Xcode/DerivedData"), kind: .directory, safety: .redownloadable, appsToQuit: ["Xcode"]),
+        .init(id: "ios-backups", title: "iPhone & iPad backups", detail: "Local device backups. Review the device and date before removal.", url: home("Library/Application Support/MobileSync/Backup"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "pnpm", title: "pnpm store", detail: "Shared project dependencies. Review it or run pnpm store prune; do not blindly remove it.", url: home("Library/pnpm/store"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "application-support", title: "Application Support", detail: "App data, downloads, and databases. Review individual app folders first.", url: home("Library/Application Support"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "app-containers", title: "App Containers", detail: "Sandboxed app data. Inspect each app folder before changing anything.", url: home("Library/Containers"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "group-containers", title: "Group Containers", detail: "Shared data used by app suites. Review carefully before removal.", url: home("Library/Group Containers"), kind: .directory, safety: .destructive, appsToQuit: []),
         .init(id: "chrome-profile", title: "Chrome profile", detail: "Clear browser cache in Chrome; SpaceMinder never deletes profile data.", url: home("Library/Application Support/Google/Chrome"), kind: .directory, safety: .safe, appsToQuit: []),
         .init(id: "icloud-drive", title: "iCloud Drive local copies", detail: "Inspect downloaded copies and remove local downloads while keeping iCloud originals.", url: home("Library/Mobile Documents/com~apple~CloudDocs"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "messages-attachments", title: "Messages attachments", detail: "Photos and files from Messages. Some content may be protected by macOS privacy.", url: home("Library/Messages/Attachments"), kind: .directory, safety: .destructive, appsToQuit: ["Messages"]),
+        .init(id: "mail-downloads", title: "Mail downloads", detail: "Downloaded Mail attachments. Review account folders and messages first.", url: home("Library/Containers/com.apple.mail/Data/Library/Mail Downloads"), kind: .directory, safety: .destructive, appsToQuit: ["Mail"]),
+        .init(id: "logs", title: "User logs", detail: "Application and diagnostic logs. Inspect recent files before removal.", url: home("Library/Logs"), kind: .directory, safety: .safe, appsToQuit: []),
         .init(id: "downloads", title: "Downloads", detail: "Review installers, archives, and duplicate exports manually.", url: home("Downloads"), kind: .directory, safety: .safe, appsToQuit: []),
-        .init(id: "desktop", title: "Desktop projects", detail: "Dormant development projects may contain re-creatable dependencies and build output.", url: home("Desktop"), kind: .directory, safety: .safe, appsToQuit: [])
+        .init(id: "documents", title: "Documents", detail: "Project exports, archives, and older downloads often accumulate here.", url: home("Documents"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "desktop", title: "Desktop projects", detail: "Dormant development projects may contain re-creatable dependencies and build output.", url: home("Desktop"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "movies", title: "Movies", detail: "Large recordings and exports. Review exact files before removal.", url: home("Movies"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "pictures", title: "Pictures", detail: "Photos libraries and media. Review in the owning app before changing files.", url: home("Pictures"), kind: .directory, safety: .destructive, appsToQuit: [])
     ]
 
     static func home(_ path: String) -> URL {
@@ -411,12 +427,17 @@ private final class LocalStorageScanner: @unchecked Sendable {
 }
 
 private enum PermissionProbe {
-    /// This touches metadata only. macOS returns false without Full Disk Access
-    /// for protected user data such as Messages/Mail on a typical installation.
+    /// macOS has no supported API that reveals an app's Full Disk Access setting.
+    /// This is only a best-effort capability probe. A false result is deliberately
+    /// shown as informational because Mail/Messages might simply not exist.
     static func canReadProtectedLocations() -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let probes = [home.appendingPathComponent("Library/Mail"), home.appendingPathComponent("Library/Messages")]
-        return probes.contains { FileManager.default.isReadableFile(atPath: $0.path) }
+        let existingProbes = probes.filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !existingProbes.isEmpty else { return false }
+        return existingProbes.contains {
+            (try? FileManager.default.contentsOfDirectory(atPath: $0.path)) != nil
+        }
     }
 }
 
@@ -519,7 +540,13 @@ private enum VolumeScanner {
 private enum DeveloperArtifactFinder {
     private static let categories: [String: String] = [
         "node_modules": "JavaScript dependencies",
+        ".yarn": "Yarn project cache and releases (review)",
+        ".pnpm-store": "pnpm project-local store (review)",
         ".next": "Next.js build output",
+        ".nuxt": "Nuxt build output",
+        ".svelte-kit": "SvelteKit build output",
+        ".parcel-cache": "Parcel build cache",
+        ".vite": "Vite build cache",
         "dist": "Distribution build output",
         "build": "Build output",
         ".turbo": "Turborepo cache",

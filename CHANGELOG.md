@@ -10,6 +10,10 @@
 - Persistent sidebar-based Preferences and Privacy workspaces, plus richer compact duplicate-set details
 - iCloud local-copy offloading that preserves cloud originals
 - Generated-code final confirmation for every removal path, including cleanup, iCloud local-copy eviction, and Trash moves
+- Review-first cleanup: each recommendation and review-only location opens in Explorer for item-level measurement and selection
+- Expanded review locations and JavaScript package coverage: npm, Yarn, Bun, node-gyp, Corepack, pnpm, project-local stores, and build caches
+- Finder-style Explorer search, iCloud/file-type filters, name/size/kind sorting, and visible click selection feedback
+- Full Disk Access unavailable probes are now informational rather than misleading warnings
 - Full Disk Access concierge, universal Intel + Apple Silicon builds, direct-download DMG, and native icon
 
 ## Release archive

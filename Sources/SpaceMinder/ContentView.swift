@@ -102,7 +102,12 @@ struct ContentView: View {
 
             VStack(spacing: 8) {
                 ForEach(model.cleanupTargets) { target in
-                    CleanupRow(target: target, isSelected: model.selected.contains(target.id), reveal: { model.reveal(target.url) }) {
+                    CleanupRow(
+                        target: target,
+                        isSelected: model.selected.contains(target.id),
+                        review: { inspectCleanupTarget(target) },
+                        reveal: { model.reveal(target.url) }
+                    ) {
                         if model.selected.contains(target.id) { model.selected.remove(target.id) }
                         else if target.exists { model.selected.insert(target.id) }
                     }
@@ -111,13 +116,21 @@ struct ContentView: View {
         }
     }
 
+    private func inspectCleanupTarget(_ target: StorageTarget) {
+        guard target.exists else { return }
+        workspace = .explorer
+        Task { await model.inspectDirectory(target.url) }
+    }
+
     private var insightSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Space to review").font(.title3.weight(.semibold))
-            Text("These locations may be large, but SpaceMinder deliberately leaves their data under your control.")
+            Text("These locations may be large, but SpaceMinder deliberately leaves their data under your control. Some locations overlap, so do not add their totals together.")
                 .font(.subheadline).foregroundStyle(.secondary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 12)], spacing: 12) {
-                ForEach(model.insightTargets) { target in InsightCard(target: target) }
+                ForEach(model.insightTargets) { target in
+                    InsightCard(target: target, review: { inspectCleanupTarget(target) })
+                }
             }
         }
     }
@@ -416,6 +429,7 @@ private struct StorageHero: View {
 private struct CleanupRow: View {
     let target: StorageTarget
     let isSelected: Bool
+    let review: () -> Void
     let reveal: () -> Void
     let toggle: () -> Void
     var body: some View {
@@ -438,7 +452,11 @@ private struct CleanupRow: View {
             Spacer()
             Text(target.exists ? ByteCountFormatter.string(fromByteCount: target.bytes, countStyle: .file) : "Not found")
                 .font(.system(.body, design: .monospaced).weight(.semibold)).foregroundStyle(target.exists ? .primary : .tertiary)
-            Button("Reveal", action: reveal).buttonStyle(.link).disabled(!target.exists)
+            Button("Review", action: review).buttonStyle(.link).disabled(!target.exists)
+            Button(action: reveal) { Image(systemName: "arrow.up.forward.app") }
+                .buttonStyle(.plain)
+                .help("Reveal in Finder")
+                .disabled(!target.exists)
         }
         .padding(.horizontal, 15).padding(.vertical, 9)
         .background(isSelected ? .indigo.opacity(0.09) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -449,12 +467,19 @@ private struct CleanupRow: View {
 private struct InsightCard: View {
     @EnvironmentObject private var model: StorageViewModel
     let target: StorageTarget
+    let review: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack { Image(systemName: "folder").foregroundStyle(.indigo); Spacer(); Text(ByteCountFormatter.string(fromByteCount: target.bytes, countStyle: .file)).font(.caption.weight(.semibold)).monospacedDigit() }
             Text(target.title).fontWeight(.semibold)
             Text(target.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button("Reveal in Finder") { model.reveal(target.url) }.buttonStyle(.link).font(.caption)
+            HStack {
+                Button("Review", action: review).buttonStyle(.link).font(.caption)
+                Spacer()
+                Button(action: { model.reveal(target.url) }) { Image(systemName: "arrow.up.forward.app") }
+                    .buttonStyle(.plain)
+                    .help("Reveal in Finder")
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
         .padding(16)
