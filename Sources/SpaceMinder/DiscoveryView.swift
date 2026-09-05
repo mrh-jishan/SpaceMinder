@@ -734,7 +734,9 @@ private struct ExplorerPreviewPane: View {
                     }
                     Spacer()
                     HStack {
-                        Button(entry.isDirectory ? "Open" : "Reveal", action: open).buttonStyle(.bordered)
+                        if entry.isDirectory {
+                            Button("Open", action: open).buttonStyle(.bordered)
+                        }
                         Button("Reveal", action: reveal).buttonStyle(.bordered)
                     }
                 }
