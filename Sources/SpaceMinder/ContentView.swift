@@ -2,13 +2,13 @@ import SwiftUI
 import AppKit
 
 private enum Workspace: String, CaseIterable, Identifiable {
-    case dashboard, discovery, explorer, pro
+    case dashboard, discovery, explorer, pro, preferences, privacy
     var id: String { rawValue }
 }
 
 struct ContentView: View {
     @EnvironmentObject private var model: StorageViewModel
-    @State private var showConfirmation = false
+    @State private var destructiveRequest: DestructiveActionRequest?
     @State private var workspace: Workspace? = .dashboard
 
     var body: some View {
@@ -21,8 +21,13 @@ struct ContentView: View {
                 case .discovery: DiscoveryView(onOpenExplorer: { workspace = .explorer })
                 case .explorer: FolderExplorerView()
                 case .pro: ProWorkspaceView()
+                case .preferences: PreferencesWorkspaceView()
+                case .privacy: PrivacyWorkspaceView()
                 }
             }
+            .id(workspace?.id)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+            .animation(.spring(response: 0.32, dampingFraction: 0.88), value: workspace)
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -32,13 +37,8 @@ struct ContentView: View {
                 .disabled(model.isScanning || model.isCleaning)
             }
         }
-        .confirmationDialog("Permanently remove selected items?", isPresented: $showConfirmation, titleVisibility: .visible) {
-            Button("Clean \(ByteCountFormatter.string(fromByteCount: model.selectedBytes, countStyle: .file))", role: .destructive) {
-                Task { await model.cleanSelected() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("SpaceMinder only removes the exact folders and files selected below. This cannot be undone.")
+        .sheet(item: $destructiveRequest) { request in
+            SafetyConfirmationSheet(request: request) { request.perform(); destructiveRequest = nil }
         }
         .alert("SpaceMinder", isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) {
             Button("OK") { model.notice = nil }
@@ -86,7 +86,15 @@ struct ContentView: View {
                     Text("Select only data you are comfortable recreating.").font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Clean selected") { showConfirmation = true }
+                Button("Clean selected") {
+                    let targets = model.cleanupTargets.filter { model.selected.contains($0.id) && $0.exists }
+                    destructiveRequest = DestructiveActionRequest(
+                        title: "Permanently remove selected storage?",
+                        detail: "This permanently removes the exact selected cache, model, symbol, Trash, or Docker data. It cannot be recovered after the operation finishes.",
+                        items: targets.map { "\($0.title) — \(ByteCountFormatter.string(fromByteCount: $0.bytes, countStyle: .file))" },
+                        perform: { Task { await model.cleanSelected() } }
+                    )
+                }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.selected.isEmpty || model.isCleaning)
             }
@@ -132,16 +140,73 @@ struct ContentView: View {
     }
 }
 
+struct DestructiveActionRequest: Identifiable {
+    let id = UUID()
+    let title: String
+    let detail: String
+    let items: [String]
+    let code: String
+    let perform: () -> Void
+
+    init(title: String, detail: String, items: [String], perform: @escaping () -> Void) {
+        self.title = title
+        self.detail = detail
+        self.items = items
+        self.code = "CONFIRM-\(Int.random(in: 1000...9999))"
+        self.perform = perform
+    }
+}
+
+struct SafetyConfirmationSheet: View {
+    let request: DestructiveActionRequest
+    let confirm: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var typedCode = ""
+    @FocusState private var codeFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label("Final safety check", systemImage: "exclamationmark.triangle.fill")
+                .font(.headline).foregroundStyle(.orange)
+            Text(request.title).font(.title2.weight(.bold))
+            Text(request.detail).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Affected items").font(.subheadline.weight(.semibold))
+                ForEach(request.items.prefix(8), id: \.self) { Text("• \($0)").font(.caption).foregroundStyle(.secondary) }
+                if request.items.count > 8 { Text("• and \(request.items.count - 8) more item(s)").font(.caption).foregroundStyle(.secondary) }
+            }
+            .padding(12).background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Type this generated code to authorize the operation:").font(.subheadline)
+                Text(request.code).font(.system(.title3, design: .monospaced).weight(.bold)).textSelection(.enabled)
+                TextField("Enter authorization code", text: $typedCode)
+                    .textFieldStyle(.roundedBorder).focused($codeFocused)
+            }
+            HStack {
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Permanently continue", role: .destructive) { confirm() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(typedCode.trimmingCharacters(in: .whitespacesAndNewlines) != request.code)
+            }
+        }
+        .padding(28)
+        .frame(width: 560)
+        .onAppear { codeFocused = true }
+    }
+}
+
 struct WorkspaceScrollPage<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         GeometryReader { proxy in
-            let horizontal = min(max(CGFloat(24), proxy.size.width * 0.055), CGFloat(64))
-            let vertical = min(max(CGFloat(24), proxy.size.height * 0.045), CGFloat(48))
+            let horizontal = min(max(CGFloat(20), proxy.size.width * 0.045), CGFloat(56))
+            let vertical = min(max(CGFloat(20), proxy.size.height * 0.035), CGFloat(36))
             ScrollView {
                 content()
-                    .frame(maxWidth: 1280, alignment: .leading)
+                    .frame(maxWidth: 1220, alignment: .leading)
                     .padding(.horizontal, horizontal)
                     .padding(.vertical, vertical)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -253,16 +318,69 @@ private struct Sidebar: View {
             Section("Tools") {
                 Button { model.addCustomPath() } label: { Label("Inspect folder", systemImage: "folder.badge.plus") }
                     .buttonStyle(.plain)
-                Button { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) } label: { Label("Preferences", systemImage: "gearshape") }
-                    .buttonStyle(.plain)
+                Label("Preferences", systemImage: "gearshape").tag(Workspace.preferences)
             }
             Section("Privacy") {
-                Label("Local analysis only", systemImage: "lock.fill")
-                    .foregroundStyle(.secondary)
+                Label("Privacy & Permissions", systemImage: "lock.fill").tag(Workspace.privacy)
             }
         }
         .listStyle(.sidebar)
         .navigationTitle("SpaceMinder")
+    }
+}
+
+private struct PreferencesWorkspaceView: View {
+    @EnvironmentObject private var model: StorageViewModel
+    var body: some View {
+        WorkspaceScrollPage {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Preferences").font(.system(size: 30, weight: .bold, design: .rounded))
+                    Text("Configure local behavior. SpaceMinder never cleans automatically.").foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 13) {
+                    Text("Automation").font(.title3.weight(.semibold))
+                    Toggle("Open SpaceMinder when I log in", isOn: $model.launchAtLogin)
+                        .onChange(of: model.launchAtLogin) { _ in model.updateLoginItem() }
+                    Text("Launch at login only opens the app; it never performs a cleanup without your confirmation.").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack { Text("Custom scan folders").font(.title3.weight(.semibold)); Spacer(); Button("Add folder…") { model.addCustomPath() } }
+                    Text("Custom locations are analysis-only. Use Folder Explorer when you intentionally want to manage their contents.").font(.subheadline).foregroundStyle(.secondary)
+                    ForEach(model.customPaths, id: \.self) { url in
+                        HStack { Image(systemName: "folder.fill").foregroundStyle(.indigo); Text(url.path).lineLimit(1); Spacer(); Button("Remove") { model.customPaths.removeAll { $0 == url }; Task { await model.scan() } }.buttonStyle(.link) }
+                    }
+                }
+                .padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct PrivacyWorkspaceView: View {
+    @EnvironmentObject private var model: StorageViewModel
+    var body: some View {
+        WorkspaceScrollPage {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Privacy & Permissions").font(.system(size: 30, weight: .bold, design: .rounded))
+                    Text("Your file names, sizes, duplicate hashes, and cleanup history stay on this Mac.").foregroundStyle(.secondary)
+                }
+                PermissionCard()
+                VStack(alignment: .leading, spacing: 11) {
+                    Label("No network service", systemImage: "network.slash").font(.headline)
+                    Text("SpaceMinder has no account, analytics, server, or upload path. Duplicate hashes are calculated locally and are never transmitted.").foregroundStyle(.secondary)
+                    Label("Your approval is required", systemImage: "hand.raised.fill").font(.headline).padding(.top, 5)
+                    Text("The app uses a fixed cleanup allow-list. Folder Explorer moves selected local files to Trash; it never deletes arbitrary files automatically. iCloud offloading keeps cloud originals.").foregroundStyle(.secondary)
+                    Label("Why Full Disk Access is optional", systemImage: "lock.shield.fill").font(.headline).padding(.top, 5)
+                    Text("Apple requires each person to enable Full Disk Access themselves after installation. It cannot be granted by a DMG or installer, which protects Mail, Messages, and other sensitive data.").foregroundStyle(.secondary)
+                }
+                .padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 

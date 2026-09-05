@@ -100,6 +100,7 @@ struct StorageSnapshot: Codable, Identifiable {
 struct DuplicateFile: Identifiable, Hashable {
     let url: URL
     let bytes: Int64
+    let modifiedAt: Date?
     var id: String { url.path }
 }
 
@@ -123,6 +124,7 @@ struct DirectoryEntry: Identifiable, Hashable, Sendable {
     let isDirectory: Bool
     let isICloud: Bool
     let isDownloaded: Bool
+    let isMeasured: Bool
     var id: String { url.path }
 }
 
@@ -130,6 +132,12 @@ struct DirectoryInventory: Sendable {
     let root: URL
     let entries: [DirectoryEntry]
     let inaccessibleItems: Int
+    let scannedFiles: Int
+    let wasCapped: Bool
+}
+
+struct DirectoryMeasurement: Sendable {
+    let bytes: Int64
     let scannedFiles: Int
     let wasCapped: Bool
 }
@@ -170,6 +178,7 @@ final class StorageViewModel: ObservableObject {
     @Published private(set) var protectedLocationsAvailable = false
     @Published private(set) var inventory: DirectoryInventory?
     @Published var isInspectingDirectory = false
+    @Published private(set) var measuringEntries = Set<String>()
     @Published private(set) var mountedVolumes: [MountedVolume] = []
     @Published private(set) var snapshots: [StorageSnapshot] = []
     @Published private(set) var developerArtifacts: [DeveloperArtifact] = []
@@ -270,6 +279,10 @@ final class StorageViewModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    func reveal(_ urls: [URL]) {
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
     func openFullDiskAccess() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!
         NSWorkspace.shared.open(url)
@@ -295,6 +308,19 @@ final class StorageViewModel: ObservableObject {
         let result = await Task.detached(priority: .userInitiated) { DirectoryInspector.inspect(url) }.value
         inventory = result
         isInspectingDirectory = false
+    }
+
+    func measureDirectoryEntry(_ entry: DirectoryEntry) async {
+        guard entry.isDirectory, !measuringEntries.contains(entry.id) else { return }
+        measuringEntries.insert(entry.id)
+        let measurement = await Task.detached(priority: .userInitiated) { DirectoryInspector.measure(entry.url) }.value
+        guard let current = inventory else { measuringEntries.remove(entry.id); return }
+        let entries = current.entries.map { item in
+            item.id == entry.id ? DirectoryEntry(url: item.url, bytes: measurement.bytes, isDirectory: item.isDirectory, isICloud: item.isICloud, isDownloaded: item.isDownloaded, isMeasured: true) : item
+        }
+        inventory = DirectoryInventory(root: current.root, entries: entries.sorted { $0.bytes > $1.bytes }, inaccessibleItems: current.inaccessibleItems, scannedFiles: measurement.scannedFiles, wasCapped: measurement.wasCapped)
+        measuringEntries.remove(entry.id)
+        if measurement.wasCapped { notice = "Measurement for \(entry.url.lastPathComponent) stopped after \(measurement.scannedFiles.formatted()) files. Choose a narrower folder for a complete size." }
     }
 
     func scanDeveloperArtifacts(in roots: [URL]) async {
@@ -397,7 +423,7 @@ private enum PermissionProbe {
 private enum DuplicateFinder {
     static func find(in folders: [URL], maxFiles: Int = 30_000, minimumBytes: Int64 = 1_048_576) -> DuplicateScanResult {
         let manager = FileManager.default
-        let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .fileAllocatedSizeKey]
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .fileAllocatedSizeKey, .contentModificationDateKey]
         var sameSize: [Int64: [URL]] = [:]
         var inspected = 0
         var capped = false
@@ -418,7 +444,8 @@ private enum DuplicateFinder {
         for (bytes, files) in sameSize where files.count > 1 {
             for file in files {
                 guard let digest = sha256(of: file) else { continue }
-                byDigest[digest, default: []].append(DuplicateFile(url: file, bytes: bytes))
+                let modifiedAt = try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+                byDigest[digest, default: []].append(DuplicateFile(url: file, bytes: bytes, modifiedAt: modifiedAt))
             }
         }
         let groups = byDigest.compactMap { digest, files -> DuplicateGroup? in
@@ -442,37 +469,37 @@ private enum DuplicateFinder {
 }
 
 private enum DirectoryInspector {
-    static func inspect(_ root: URL, maxFiles: Int = 150_000) -> DirectoryInventory {
+    /// Finder-fast inventory: only direct children are read initially. Expensive
+    /// recursive allocation totals are requested per folder by the user.
+    static func inspect(_ root: URL) -> DirectoryInventory {
         let manager = FileManager.default
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .fileSizeKey]
         var inaccessible = 0
         let urls = (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: Array(keys), options: [])) ?? []
-        var entries = urls.compactMap { url -> DirectoryEntry? in
+        let entries = urls.compactMap { url -> DirectoryEntry? in
             guard let values = try? url.resourceValues(forKeys: keys) else { inaccessible += 1; return nil }
             let directory = values.isDirectory == true
-            return DirectoryEntry(url: url, bytes: 0, isDirectory: directory, isICloud: values.isUbiquitousItem == true, isDownloaded: values.ubiquitousItemDownloadingStatus == .current)
+            let bytes = directory ? 0 : Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? values.fileSize ?? 0)
+            return DirectoryEntry(url: url, bytes: bytes, isDirectory: directory, isICloud: values.isUbiquitousItem == true, isDownloaded: values.ubiquitousItemDownloadingStatus == .current, isMeasured: !directory)
         }
-        var totals = Dictionary(uniqueKeysWithValues: entries.map { ($0.url.path, Int64(0)) })
+        return DirectoryInventory(root: root, entries: entries.sorted { $0.url.lastPathComponent.localizedCaseInsensitiveCompare($1.url.lastPathComponent) == .orderedAscending }, inaccessibleItems: inaccessible, scannedFiles: 0, wasCapped: false)
+    }
+
+    static func measure(_ root: URL, maxFiles: Int = 150_000) -> DirectoryMeasurement {
+        let manager = FileManager.default
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .fileSizeKey]
+        guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [], errorHandler: { _, _ in true }) else { return DirectoryMeasurement(bytes: 0, scannedFiles: 0, wasCapped: false) }
+        var total: Int64 = 0
         var scannedFiles = 0
         var capped = false
-        let rootPath = root.standardizedFileURL.path
-        guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [], errorHandler: { _, _ in inaccessible += 1; return true }) else {
-            return DirectoryInventory(root: root, entries: entries, inaccessibleItems: inaccessible, scannedFiles: 0, wasCapped: false)
-        }
         for case let item as URL in enumerator {
-            guard let values = try? item.resourceValues(forKeys: keys) else { inaccessible += 1; continue }
+            guard let values = try? item.resourceValues(forKeys: keys) else { continue }
             guard values.isDirectory != true else { continue }
             scannedFiles += 1
             if scannedFiles > maxFiles { capped = true; break }
-            let relative = item.standardizedFileURL.path.dropFirst(rootPath.count).split(separator: "/", maxSplits: 1).first
-            guard let firstComponent = relative else { continue }
-            let directPath = root.appendingPathComponent(String(firstComponent)).path
-            totals[directPath, default: 0] += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? values.fileSize ?? 0)
+            total += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? values.fileSize ?? 0)
         }
-        entries = entries.map { entry in
-            DirectoryEntry(url: entry.url, bytes: totals[entry.url.path] ?? 0, isDirectory: entry.isDirectory, isICloud: entry.isICloud, isDownloaded: entry.isDownloaded)
-        }
-        return DirectoryInventory(root: root, entries: entries.sorted { $0.bytes > $1.bytes }, inaccessibleItems: inaccessible, scannedFiles: scannedFiles, wasCapped: capped)
+        return DirectoryMeasurement(bytes: total, scannedFiles: scannedFiles, wasCapped: capped)
     }
 }
 

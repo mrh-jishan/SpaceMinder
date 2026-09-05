@@ -15,15 +15,15 @@ Each release includes its versioned DMG, a permanent `SpaceMinder-latest.dmg` li
 - Native SwiftUI interface and Apple filesystem APIs
 - Physical allocated-size scanning, including sparse virtual disks
 - Fixed safe-cleanup allow-list; the interface cannot submit arbitrary deletion paths
-- Explicit destructive confirmation and app-running checks for Chrome, Xcode, and Docker
+- Generated-code final confirmation for every destructive action, plus app-running checks for Chrome, Xcode, and Docker
 - Local cleanup history, custom **scan-only** folders, and optional launch-at-login
-- Folder Explorer: navigate any chosen folder, measure physical space per direct child, reveal it in Finder, and move selected non-iCloud items to Trash
+- Finder-style Folder Explorer: instant shallow metadata listings, lazy 100-item rendering, list/grid views, double-click navigation, per-folder on-demand size measurement, Finder reveal, and reversible Trash actions
 - Duplicate Radar: efficient two-pass SHA-256 matching that hashes only equal-size files; it is local-only and never deletes files
 - Developer Reclaim Planner: identifies re-creatable `node_modules`, build output, virtual environments, Xcode artifacts, and project caches before you remove anything
 - iCloud Drive local-copy offloading, which preserves iCloud originals while freeing downloaded local copies
 - Trash as a measured, first-class cleanup target
 - Space Pulse: persistent local scan history, a configurable free-space budget, and attached-volume visibility
-- Responsive native workspaces for Dashboard, Discovery Lab, Folder Explorer, and the Pro-ready toolkit—no blocking modal navigation
+- Compact responsive native workspaces with restrained motion for Dashboard, Discovery Lab, Folder Explorer, Pro toolkit, Preferences, and Privacy—no blocking modal navigation
 - No account, network traffic, analytics, or cloud storage
 
 ## Run during development

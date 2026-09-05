@@ -33,6 +33,7 @@ struct DiscoveryView: View {
     @EnvironmentObject private var model: StorageViewModel
     let onOpenExplorer: () -> Void
     @State private var folders = DiscoveryView.defaultFolders
+    @State private var expandedDuplicateID: String?
 
     private static var defaultFolders: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -114,7 +115,9 @@ struct DiscoveryView: View {
                     .font(.title2.weight(.bold)).monospacedDigit()
             }
             ForEach(model.duplicateGroups.prefix(30)) { group in
-                DuplicateGroupCard(group: group)
+                DuplicateGroupCard(group: group, isExpanded: expandedDuplicateID == group.id) {
+                    expandedDuplicateID = expandedDuplicateID == group.id ? nil : group.id
+                }
             }
         }
     }
@@ -179,12 +182,20 @@ struct DiscoveryView: View {
 struct FolderExplorerView: View {
     @EnvironmentObject private var model: StorageViewModel
     @State private var selected = Set<String>()
-    @State private var confirmTrash = false
+    @State private var destructiveRequest: DestructiveActionRequest?
+    @State private var presentation: ExplorerPresentation = .list
+    @State private var sortBySize = false
+    @State private var visibleLimit = 100
 
     private var inventory: DirectoryInventory? { model.inventory }
     private var selectedEntries: [DirectoryEntry] { inventory?.entries.filter { selected.contains($0.id) } ?? [] }
     private var localEntries: [DirectoryEntry] { selectedEntries.filter { !$0.isICloud } }
     private var iCloudEntries: [DirectoryEntry] { selectedEntries.filter { $0.isICloud && $0.isDownloaded } }
+    private var displayedEntries: [DirectoryEntry] {
+        let entries = inventory?.entries ?? []
+        let sorted = sortBySize ? entries.sorted { $0.bytes > $1.bytes } : entries.sorted { $0.url.lastPathComponent.localizedCaseInsensitiveCompare($1.url.lastPathComponent) == .orderedAscending }
+        return Array(sorted.prefix(visibleLimit))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -195,30 +206,22 @@ struct FolderExplorerView: View {
                 }
                 Spacer()
                 Button("Choose folder…") { chooseRoot() }
-            }
-            .padding(.horizontal, 32).padding(.vertical, 26)
-            Divider()
-            if !model.mountedVolumes.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        Text("Volumes").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        ForEach(model.mountedVolumes) { volume in
-                            Button {
-                                selected.removeAll()
-                                Task { await model.inspectDirectory(volume.url) }
-                            } label: {
-                                Label(volume.name, systemImage: "externaldrive.fill")
-                                    .font(.caption.weight(.medium))
-                                    .padding(.horizontal, 9).padding(.vertical, 6)
-                                    .background(.quaternary, in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                        }
+                Menu {
+                    ForEach(model.mountedVolumes) { volume in
+                        Button(volume.name) { navigate(to: volume.url) }
                     }
-                    .padding(.horizontal, 28).padding(.vertical, 10)
+                } label: {
+                    Label("Volumes", systemImage: "externaldrive.fill")
                 }
-                Divider()
+                Picker("View", selection: $presentation) {
+                    Image(systemName: "list.bullet").tag(ExplorerPresentation.list)
+                    Image(systemName: "square.grid.2x2").tag(ExplorerPresentation.grid)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 86)
             }
+            .padding(.horizontal, 28).padding(.vertical, 18)
+            Divider()
             if let inventory {
                 explorer(inventory)
             } else {
@@ -228,11 +231,11 @@ struct FolderExplorerView: View {
             }
         }
         .frame(minWidth: 920, minHeight: 640)
-        .confirmationDialog("Move selected local items to Trash?", isPresented: $confirmTrash, titleVisibility: .visible) {
-            Button("Move \(localEntries.count) item(s) to Trash", role: .destructive) { model.trash(localEntries); selected.removeAll() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This is reversible until Trash is emptied. iCloud items are excluded, so cloud originals are never deleted by this action.")
+        .sheet(item: $destructiveRequest) { request in
+            SafetyConfirmationSheet(request: request) {
+                request.perform()
+                destructiveRequest = nil
+            }
         }
     }
 
@@ -247,40 +250,40 @@ struct FolderExplorerView: View {
                 if model.isInspectingDirectory { ProgressView().controlSize(.small) }
                 Button { Task { await model.inspectDirectory(inventory.root) } } label: { Image(systemName: "arrow.clockwise") }
             }
-            .padding(.horizontal, 28).padding(.vertical, 14)
+            .padding(.horizontal, 28).padding(.vertical, 10)
             .background(.quaternary.opacity(0.5))
 
             HStack(spacing: 10) {
-                Text("\(inventory.entries.count) direct items · \(inventory.scannedFiles.formatted()) files measured in one pass").font(.caption).foregroundStyle(.secondary)
+                Text("\(inventory.entries.count) direct items · instant metadata view").font(.caption).foregroundStyle(.secondary)
                 if inventory.inaccessibleItems > 0 { Text("\(inventory.inaccessibleItems) protected item(s) skipped").font(.caption).foregroundStyle(.orange) }
-                if inventory.wasCapped { Text("Scan capped at 150,000 files—choose a narrower folder for complete results.").font(.caption).foregroundStyle(.orange) }
                 Spacer()
+                Toggle("Largest first", isOn: $sortBySize).toggleStyle(.checkbox).font(.caption)
                 if !iCloudEntries.isEmpty {
-                    Button("Remove local iCloud copies") { model.removeLocalICloudCopies(iCloudEntries); selected.removeAll() }
+                    Button("Remove local iCloud copies") { requestICloudEviction() }
                         .buttonStyle(.bordered)
                 }
-                Button("Move local items to Trash") { confirmTrash = true }
+                Button("Move local items to Trash") { requestTrash() }
                     .buttonStyle(.borderedProminent)
                     .disabled(localEntries.isEmpty)
             }
-            .padding(.horizontal, 28).padding(.vertical, 13)
+            .padding(.horizontal, 28).padding(.vertical, 9)
 
-            List(inventory.entries, selection: $selected) { entry in
-                HStack(spacing: 10) {
-                    Image(systemName: entry.isDirectory ? "folder.fill" : (entry.isICloud ? "icloud.fill" : "doc.fill"))
-                        .foregroundStyle(entry.isICloud ? .blue : .indigo)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.url.lastPathComponent).lineLimit(1)
-                        if entry.isICloud { Text(entry.isDownloaded ? "iCloud: stored locally" : "iCloud: online only").font(.caption).foregroundStyle(.secondary) }
+            if presentation == .list {
+                List(displayedEntries, selection: $selected) { entry in ExplorerEntryRow(entry: entry, selected: selected.contains(entry.id), isMeasuring: model.measuringEntries.contains(entry.id), toggle: { toggle(entry) }, open: { open(entry) }, reveal: { model.reveal(entry.url) }, measure: { Task { await model.measureDirectoryEntry(entry) } }) }
+                    .listStyle(.inset)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
+                        ForEach(displayedEntries) { entry in ExplorerEntryTile(entry: entry, selected: selected.contains(entry.id), isMeasuring: model.measuringEntries.contains(entry.id), toggle: { toggle(entry) }, open: { open(entry) }, reveal: { model.reveal(entry.url) }, measure: { Task { await model.measureDirectoryEntry(entry) } }) }
                     }
-                    Spacer()
-                    Text(ByteCountFormatter.string(fromByteCount: entry.bytes, countStyle: .file)).font(.system(.body, design: .monospaced)).foregroundStyle(.secondary)
-                    if entry.isDirectory { Button("Open") { selected.removeAll(); Task { await model.inspectDirectory(entry.url) } }.buttonStyle(.link) }
-                    Button("Reveal") { model.reveal(entry.url) }.buttonStyle(.link)
+                    .padding(22)
                 }
-                .tag(entry.id)
             }
-            .listStyle(.inset)
+            if inventory.entries.count > visibleLimit {
+                Button("Load next \(min(100, inventory.entries.count - visibleLimit)) items") { visibleLimit += 100 }
+                    .buttonStyle(.bordered)
+                    .padding(.vertical, 11)
+            }
         }
     }
 
@@ -290,28 +293,163 @@ struct FolderExplorerView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
-        if panel.runModal() == .OK, let url = panel.url { selected.removeAll(); Task { await model.inspectDirectory(url) } }
+        if panel.runModal() == .OK, let url = panel.url { navigate(to: url) }
     }
 
     private func openParent(of root: URL) {
-        selected.removeAll()
-        Task { await model.inspectDirectory(root.deletingLastPathComponent()) }
+        navigate(to: root.deletingLastPathComponent())
+    }
+
+    private func navigate(to url: URL) {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            selected.removeAll()
+            visibleLimit = 100
+        }
+        Task { await model.inspectDirectory(url) }
+    }
+
+    private func open(_ entry: DirectoryEntry) {
+        guard entry.isDirectory else { model.reveal(entry.url); return }
+        navigate(to: entry.url)
+    }
+
+    private func toggle(_ entry: DirectoryEntry) {
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
+            if selected.contains(entry.id) { selected.remove(entry.id) } else { selected.insert(entry.id) }
+        }
+    }
+
+    private func requestICloudEviction() {
+        let entries = iCloudEntries
+        guard !entries.isEmpty else { return }
+        destructiveRequest = DestructiveActionRequest(
+            title: "Remove these downloaded iCloud copies?",
+            detail: "This asks macOS to free the selected local downloads. Their cloud originals remain in iCloud Drive, but opening them later may download them again.",
+            items: entries.map { "\($0.url.lastPathComponent) — \(ByteCountFormatter.string(fromByteCount: $0.bytes, countStyle: .file))" },
+            perform: {
+                model.removeLocalICloudCopies(entries)
+                selected.removeAll()
+            }
+        )
+    }
+
+    private func requestTrash() {
+        let entries = localEntries
+        guard !entries.isEmpty else { return }
+        destructiveRequest = DestructiveActionRequest(
+            title: "Move these local items to Trash?",
+            detail: "These exact local files and folders will move to Trash. They can be restored until Trash is emptied. iCloud items are excluded from this operation.",
+            items: entries.map { "\($0.url.lastPathComponent) — \(entrySizeLabel($0))" },
+            perform: {
+                model.trash(entries)
+                selected.removeAll()
+            }
+        )
+    }
+
+    private func entrySizeLabel(_ entry: DirectoryEntry) -> String {
+        entry.isDirectory && !entry.isMeasured
+            ? "size not measured"
+            : ByteCountFormatter.string(fromByteCount: entry.bytes, countStyle: .file)
+    }
+}
+
+private enum ExplorerPresentation: Hashable { case list, grid }
+
+private struct ExplorerEntryRow: View {
+    let entry: DirectoryEntry
+    let selected: Bool
+    let isMeasuring: Bool
+    let toggle: () -> Void
+    let open: () -> Void
+    let reveal: () -> Void
+    let measure: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: toggle) { Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? .indigo : .secondary) }.buttonStyle(.plain)
+            Image(systemName: entry.isDirectory ? "folder.fill" : (entry.isICloud ? "icloud.fill" : "doc.fill")).foregroundStyle(entry.isICloud ? .blue : .indigo)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.url.lastPathComponent).lineLimit(1)
+                if entry.isICloud { Text(entry.isDownloaded ? "iCloud: stored locally" : "iCloud: online only").font(.caption).foregroundStyle(.secondary) }
+            }
+            Spacer()
+            if entry.isDirectory && !entry.isMeasured {
+                Button(isMeasuring ? "Measuring…" : "Measure", action: measure).buttonStyle(.link).disabled(isMeasuring)
+            } else {
+                Text(ByteCountFormatter.string(fromByteCount: entry.bytes, countStyle: .file)).font(.system(.body, design: .monospaced)).foregroundStyle(.secondary)
+            }
+            if entry.isDirectory { Button("Open", action: open).buttonStyle(.link) }
+            Button("Reveal", action: reveal).buttonStyle(.link)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: open)
+        .animation(.spring(response: 0.22, dampingFraction: 0.86), value: selected)
+    }
+}
+
+private struct ExplorerEntryTile: View {
+    let entry: DirectoryEntry
+    let selected: Bool
+    let isMeasuring: Bool
+    let toggle: () -> Void
+    let open: () -> Void
+    let reveal: () -> Void
+    let measure: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack { Image(systemName: entry.isDirectory ? "folder.fill" : (entry.isICloud ? "icloud.fill" : "doc.fill")).font(.title2).foregroundStyle(entry.isICloud ? .blue : .indigo); Spacer(); Button(action: toggle) { Image(systemName: selected ? "checkmark.circle.fill" : "circle") }.buttonStyle(.plain) }
+            Text(entry.url.lastPathComponent).font(.subheadline.weight(.medium)).lineLimit(2)
+            if entry.isDirectory && !entry.isMeasured { Button(isMeasuring ? "Measuring…" : "Measure size", action: measure).buttonStyle(.link).disabled(isMeasuring) }
+            else { Text(ByteCountFormatter.string(fromByteCount: entry.bytes, countStyle: .file)).font(.caption.monospaced()).foregroundStyle(.secondary) }
+            HStack { if entry.isDirectory { Button("Open", action: open) }; Spacer(); Button("Reveal", action: reveal) }.buttonStyle(.link).font(.caption)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+        .background(selected ? .indigo.opacity(0.10) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture(count: 2, perform: open)
+        .animation(.spring(response: 0.22, dampingFraction: 0.86), value: selected)
     }
 }
 
 private struct DuplicateGroupCard: View {
     @EnvironmentObject private var model: StorageViewModel
     let group: DuplicateGroup
+    let isExpanded: Bool
+    let toggle: () -> Void
 
     var body: some View {
-        DisclosureGroup {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: toggle) {
+                HStack {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                    Image(systemName: "doc.on.doc.fill").foregroundStyle(.indigo)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(group.files.count) identical copies").fontWeight(.semibold)
+                        Text("\(Set(group.files.map { $0.url.deletingLastPathComponent().path }).count) locations · SHA-256 \(group.digest.prefix(12))…").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(ByteCountFormatter.string(fromByteCount: group.reclaimableBytes, countStyle: .file)) reclaimable").font(.caption.weight(.semibold)).foregroundStyle(.green)
+                        Text("\(ByteCountFormatter.string(fromByteCount: group.bytesPerFile, countStyle: .file)) each").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            if isExpanded {
+                HStack {
+                    Text("Exact content match; keep one copy, then review the others in Finder.").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Reveal all copies") { model.reveal(group.files.map(\.url)) }.buttonStyle(.link).font(.caption)
+                }
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(group.files) { file in
                     HStack(spacing: 9) {
                         Image(systemName: "doc.fill").foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(file.url.lastPathComponent).lineLimit(1)
-                            Text(file.url.deletingLastPathComponent().path).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            Text("\(file.url.deletingLastPathComponent().path) · \(file.modifiedAt?.formatted(date: .abbreviated, time: .shortened) ?? "unknown date")").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
                         Button("Reveal") { model.reveal(file.url) }.buttonStyle(.link)
@@ -319,14 +457,7 @@ private struct DuplicateGroupCard: View {
                     .font(.subheadline)
                 }
             }
-            .padding(.top, 8)
-        } label: {
-            HStack {
-                Image(systemName: "doc.on.doc.fill").foregroundStyle(.indigo)
-                Text("\(group.files.count) identical copies").fontWeight(.semibold)
-                Spacer()
-                Text("\(ByteCountFormatter.string(fromByteCount: group.bytesPerFile, countStyle: .file)) each").foregroundStyle(.secondary)
-                Text("reclaim \(ByteCountFormatter.string(fromByteCount: group.reclaimableBytes, countStyle: .file))").font(.caption.weight(.semibold)).foregroundStyle(.green)
+            .padding(.leading, 24)
             }
         }
         .padding(15)
