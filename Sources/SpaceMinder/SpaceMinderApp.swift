@@ -60,6 +60,10 @@ struct StorageTarget: Identifiable, Hashable {
         .init(id: "node-gyp-cache", title: "Node build cache", detail: "Node-gyp headers and compiled build prerequisites. They can be recreated.", url: home(".cache/node-gyp"), kind: .directory, safety: .safe, appsToQuit: []),
         .init(id: "corepack-cache", title: "Corepack package-manager cache", detail: "Downloaded package-manager releases for npm, Yarn, and pnpm.", url: home("Library/Caches/node/corepack"), kind: .directory, safety: .safe, appsToQuit: []),
         .init(id: "huggingface-cache", title: "Hugging Face models", detail: "Downloaded AI models. They will download again if used.", url: home(".cache/huggingface"), kind: .directory, safety: .redownloadable, appsToQuit: []),
+        .init(id: "ollama-models", title: "Ollama models", detail: "Downloaded local AI models. Pull them again with Ollama if needed.", url: home(".ollama/models"), kind: .directory, safety: .redownloadable, appsToQuit: ["Ollama"]),
+        .init(id: "lm-studio-cache", title: "LM Studio models", detail: "Downloaded local AI models. Review models before removing them.", url: home(".cache/lm-studio/models"), kind: .directory, safety: .redownloadable, appsToQuit: ["LM Studio"]),
+        .init(id: "torch-model-cache", title: "PyTorch model cache", detail: "Downloaded model checkpoints and Hub assets that can be fetched again.", url: home(".cache/torch"), kind: .directory, safety: .redownloadable, appsToQuit: []),
+        .init(id: "whisper-model-cache", title: "Whisper model cache", detail: "Downloaded speech-recognition models that can be downloaded again.", url: home(".cache/whisper"), kind: .directory, safety: .redownloadable, appsToQuit: []),
         .init(id: "xcode-device-support", title: "Xcode iOS DeviceSupport", detail: "Device symbols used to debug connected iPhones and iPads.", url: home("Library/Developer/Xcode/iOS DeviceSupport"), kind: .directory, safety: .redownloadable, appsToQuit: ["Xcode"]),
         .init(id: "chrome-ai-model", title: "Chrome on-device AI model", detail: "Downloaded model only; bookmarks, passwords, and history stay intact.", url: home("Library/Application Support/Google/Chrome/OptGuideOnDeviceModel"), kind: .directory, safety: .redownloadable, appsToQuit: ["Google Chrome"]),
         .init(id: "trash", title: "Trash", detail: "Items already marked for deletion. Empty it only after reviewing its contents.", url: home(".Trash"), kind: .contents, safety: .safe, appsToQuit: []),
@@ -181,8 +185,8 @@ struct DeveloperArtifactResult: Sendable {
 @MainActor
 final class StorageViewModel: ObservableObject {
     @Published private(set) var volume = VolumeStatus(total: 0, available: 0)
-    @Published private(set) var cleanupTargets = StorageTarget.cleanup
-    @Published private(set) var insightTargets = StorageTarget.insights
+    @Published private(set) var cleanupTargets: [StorageTarget] = []
+    @Published private(set) var insightTargets: [StorageTarget] = []
     @Published private(set) var history: [CleanupEvent] = []
     @Published var selected = Set<String>()
     @Published var isScanning = false
@@ -227,12 +231,14 @@ final class StorageViewModel: ObservableObject {
         let result = await Task.detached(priority: .userInitiated) { [scanner] in
             scanner.scan(cleanup: StorageTarget.cleanup, insights: StorageTarget.insights, custom: custom)
         }.value
+        let nonEmptyCleanup = result.cleanup.filter { $0.exists && $0.bytes > 0 }
+        let nonEmptyInsights = result.insights.filter { $0.exists && $0.bytes > 0 }
         volume = result.volume
-        cleanupTargets = result.cleanup
-        insightTargets = result.insights
+        cleanupTargets = nonEmptyCleanup
+        insightTargets = nonEmptyInsights
         mountedVolumes = VolumeScanner.mounted()
-        recordSnapshot(recommendedBytes: result.cleanup.reduce(0) { $0 + $1.bytes })
-        selected = selected.intersection(Set(result.cleanup.filter(\.exists).map(\.id)))
+        recordSnapshot(recommendedBytes: nonEmptyCleanup.reduce(0) { $0 + $1.bytes })
+        selected = selected.intersection(Set(nonEmptyCleanup.map(\.id)))
         isScanning = false
     }
 

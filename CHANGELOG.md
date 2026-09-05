@@ -14,6 +14,9 @@
 - Expanded review locations and JavaScript package coverage: npm, Yarn, Bun, node-gyp, Corepack, pnpm, project-local stores, and build caches
 - Finder-style Explorer search, iCloud/file-type filters, name/size/kind sorting, and visible click selection feedback
 - Explorer quick locations (Home, Desktop, Downloads, Documents), current-folder Finder opening, and select-all/clear controls
+- Visible Explorer quick-location buttons, split list-and-preview view, Finder-style modifier selection, drag-out support, and file-type icons
+- Duplicate Radar and Developer Reclaim Planner now run from independent Discovery pages to avoid competing scans and interleaved results
+- Added nonempty-only local AI model cleanup targets for Ollama, LM Studio, PyTorch, and Whisper
 - Full Disk Access unavailable probes are now informational rather than misleading warnings
 - Full Disk Access concierge, universal Intel + Apple Silicon builds, direct-download DMG, and native icon
 

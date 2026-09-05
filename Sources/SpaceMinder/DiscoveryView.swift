@@ -32,6 +32,7 @@ struct DiscoveryView: View {
     let onOpenExplorer: () -> Void
     @State private var folders = DiscoveryView.defaultFolders
     @State private var expandedDuplicateID: String?
+    @State private var activeTool: DiscoveryTool?
 
     private static var defaultFolders: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -40,23 +41,74 @@ struct DiscoveryView: View {
 
     var body: some View {
         WorkspaceScrollPage {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top) {
+            Group {
+                switch activeTool {
+                case .duplicates: duplicateWorkspace
+                case .reclaim: reclaimWorkspace
+                case nil: discoveryHome
+                }
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var discoveryHome: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Discovery Lab").font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text("Find exact duplicates using a two-pass, local-only scan.").foregroundStyle(.secondary)
+                    Text("Choose one focused analysis at a time so the results stay fast and readable.").foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(action: onOpenExplorer) { Label("Folder Explorer", systemImage: "folder.badge.gearshape") }
                     .buttonStyle(.bordered)
-                }
-                scanControl
-                developerPlanner
-                results
-                privacyNote
             }
+            HStack(spacing: 12) {
+                DiscoveryToolButton(
+                    title: "Duplicate Radar",
+                    detail: "Find exact byte-for-byte copies with a two-pass local scan.",
+                    icon: "doc.on.doc.fill",
+                    action: { activeTool = .duplicates }
+                )
+                DiscoveryToolButton(
+                    title: "Reclaim Planner",
+                    detail: "Find re-creatable developer dependencies and build output.",
+                    icon: "hammer.fill",
+                    action: { activeTool = .reclaim }
+                )
+            }
+            privacyNote
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var duplicateWorkspace: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            toolHeader(title: "Duplicate Radar", subtitle: "Exact duplicate detection stays entirely on this Mac.")
+            scanControl
+            results
+            privacyNote
+        }
+    }
+
+    private var reclaimWorkspace: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            toolHeader(title: "Developer Reclaim Planner", subtitle: "Generated dependencies and build output are reviewed separately from duplicate scans.")
+            developerPlanner
+        }
+    }
+
+    private func toolHeader(title: String, subtitle: String) -> some View {
+        HStack(alignment: .top) {
+            Button { activeTool = nil } label: { Label("Discovery", systemImage: "chevron.left") }
+                .buttonStyle(.bordered)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 27, weight: .bold, design: .rounded))
+                Text(subtitle).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(action: onOpenExplorer) { Label("Folder Explorer", systemImage: "folder.badge.gearshape") }
+                .buttonStyle(.bordered)
+        }
     }
 
     private var scanControl: some View {
@@ -73,7 +125,7 @@ struct DiscoveryView: View {
                     Label(model.isScanningDuplicates ? "Scanning…" : "Scan for duplicates", systemImage: "waveform.path.ecg")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(folders.isEmpty || model.isScanningDuplicates)
+                .disabled(folders.isEmpty || model.isScanningDuplicates || model.isScanningDeveloperArtifacts)
             }
             FlowLayout(spacing: 8) {
                 ForEach(folders, id: \.path) { folder in
@@ -139,7 +191,7 @@ struct DiscoveryView: View {
                     Label(model.isScanningDeveloperArtifacts ? "Scanning…" : "Find project artifacts", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(.bordered)
-                .disabled(folders.isEmpty || model.isScanningDeveloperArtifacts)
+                .disabled(folders.isEmpty || model.isScanningDeveloperArtifacts || model.isScanningDuplicates)
             }
             Text(model.developerArtifactStatus).font(.caption).foregroundStyle(.secondary)
             if !model.developerArtifacts.isEmpty {
@@ -165,7 +217,7 @@ struct DiscoveryView: View {
 
     private func chooseFolders() {
         let panel = NSOpenPanel()
-        panel.title = "Choose folders to inspect for duplicates"
+        panel.title = "Choose folders to inspect"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
@@ -173,6 +225,35 @@ struct DiscoveryView: View {
         if panel.runModal() == .OK {
             folders = Array(Set(folders + panel.urls)).sorted { $0.path < $1.path }
         }
+    }
+}
+
+private enum DiscoveryTool {
+    case duplicates, reclaim
+}
+
+private struct DiscoveryToolButton: View {
+    let title: String
+    let detail: String
+    let icon: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: icon).font(.title3).foregroundStyle(.indigo)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(.headline)
+                    Text(detail).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
+            }
+            .padding(15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -185,8 +266,10 @@ struct FolderExplorerView: View {
     @State private var filter: ExplorerFilter = .all
     @State private var searchText = ""
     @State private var visibleLimit = 100
+    @State private var focusedEntryID: String?
 
     private var inventory: DirectoryInventory? { model.inventory }
+    private var focusedEntry: DirectoryEntry? { inventory?.entries.first { $0.id == focusedEntryID } }
     private var selectedEntries: [DirectoryEntry] { inventory?.entries.filter { selected.contains($0.id) } ?? [] }
     private var localEntries: [DirectoryEntry] { selectedEntries.filter { !$0.isICloud } }
     private var iCloudEntries: [DirectoryEntry] { selectedEntries.filter { $0.isICloud && $0.isDownloaded } }
@@ -227,14 +310,14 @@ struct FolderExplorerView: View {
                 Spacer()
                 Button { chooseRoot() } label: { Label("Choose", systemImage: "folder.badge.plus") }
                     .help("Choose a folder to inspect")
-                Menu {
-                    Button("Home") { navigate(to: FileManager.default.homeDirectoryForCurrentUser) }
-                    Button("Desktop") { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")) }
-                    Button("Downloads") { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")) }
-                    Button("Documents") { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents")) }
-                } label: {
-                    Label("Quick folders", systemImage: "house.and.flag")
-                }
+                Button { navigate(to: FileManager.default.homeDirectoryForCurrentUser) } label: { Image(systemName: "house.fill") }
+                    .help("Home")
+                Button { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")) } label: { Image(systemName: "rectangle.on.rectangle") }
+                    .help("Desktop")
+                Button { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")) } label: { Image(systemName: "arrow.down.circle") }
+                    .help("Downloads")
+                Button { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents")) } label: { Image(systemName: "doc.text") }
+                    .help("Documents")
                 Menu {
                     ForEach(model.mountedVolumes) { volume in
                         Button(volume.name) { navigate(to: volume.url) }
@@ -245,10 +328,11 @@ struct FolderExplorerView: View {
                 Picker(selection: $presentation, label: EmptyView()) {
                     Image(systemName: "list.bullet").tag(ExplorerPresentation.list)
                     Image(systemName: "square.grid.2x2").tag(ExplorerPresentation.grid)
+                    Image(systemName: "rectangle.split.2x1").tag(ExplorerPresentation.split)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 86)
+                .frame(width: 126)
                 .fixedSize()
             }
             .padding(.horizontal, 28).padding(.vertical, 18)
@@ -265,6 +349,11 @@ struct FolderExplorerView: View {
         .onChange(of: searchText) { _ in visibleLimit = 100 }
         .onChange(of: filter) { _ in visibleLimit = 100 }
         .onChange(of: sort) { _ in visibleLimit = 100 }
+        .onChange(of: selected) { values in
+            if focusedEntryID == nil || !values.contains(focusedEntryID!) {
+                focusedEntryID = values.first
+            }
+        }
         .sheet(item: $destructiveRequest) { request in
             SafetyConfirmationSheet(request: request) {
                 request.perform()
@@ -335,14 +424,25 @@ struct FolderExplorerView: View {
             .background(.quaternary.opacity(0.25))
 
             if presentation == .list {
-                List(displayedEntries, selection: $selected) { entry in ExplorerEntryRow(entry: entry, selected: selected.contains(entry.id), isMeasuring: model.measuringEntries.contains(entry.id), toggle: { toggle(entry) }, open: { open(entry) }, reveal: { model.reveal(entry.url) }, measure: { Task { await model.measureDirectoryEntry(entry) } }) }
-                    .listStyle(.inset)
-            } else {
+                entryList
+            } else if presentation == .grid {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
-                        ForEach(displayedEntries) { entry in ExplorerEntryTile(entry: entry, selected: selected.contains(entry.id), isMeasuring: model.measuringEntries.contains(entry.id), toggle: { toggle(entry) }, open: { open(entry) }, reveal: { model.reveal(entry.url) }, measure: { Task { await model.measureDirectoryEntry(entry) } }) }
+                        ForEach(displayedEntries) { entry in ExplorerEntryTile(entry: entry, selected: selected.contains(entry.id), isMeasuring: model.measuringEntries.contains(entry.id), select: { select(entry) }, open: { open(entry) }, reveal: { model.reveal(entry.url) }, measure: { Task { await model.measureDirectoryEntry(entry) } }) }
                     }
                     .padding(22)
+                }
+            } else {
+                HSplitView {
+                    entryList.frame(minWidth: 360)
+                    ExplorerPreviewPane(
+                        entry: focusedEntry,
+                        isMeasuring: focusedEntry.map { model.measuringEntries.contains($0.id) } ?? false,
+                        open: { if let entry = focusedEntry { open(entry) } },
+                        reveal: { if let entry = focusedEntry { model.reveal(entry.url) } },
+                        measure: { if let entry = focusedEntry { Task { await model.measureDirectoryEntry(entry) } } }
+                    )
+                    .frame(minWidth: 280)
                 }
             }
             let matchingCount = matchingEntries.count
@@ -370,6 +470,7 @@ struct FolderExplorerView: View {
     private func navigate(to url: URL) {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
             selected.removeAll()
+            focusedEntryID = nil
             visibleLimit = 100
         }
         Task { await model.inspectDirectory(url) }
@@ -383,19 +484,54 @@ struct FolderExplorerView: View {
     private func toggle(_ entry: DirectoryEntry) {
         withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
             if selected.contains(entry.id) { selected.remove(entry.id) } else { selected.insert(entry.id) }
+            focusedEntryID = entry.id
+        }
+    }
+
+    private func select(_ entry: DirectoryEntry) {
+        let modifiers = NSEvent.modifierFlags
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
+            if modifiers.contains(.shift), let anchor = focusedEntryID,
+               let anchorIndex = displayedEntries.firstIndex(where: { $0.id == anchor }),
+               let entryIndex = displayedEntries.firstIndex(where: { $0.id == entry.id }) {
+                selected.formUnion(displayedEntries[min(anchorIndex, entryIndex)...max(anchorIndex, entryIndex)].map(\.id))
+            } else if modifiers.contains(.command) || modifiers.contains(.control) {
+                if selected.contains(entry.id) { selected.remove(entry.id) } else { selected.insert(entry.id) }
+            } else {
+                selected = [entry.id]
+            }
+            focusedEntryID = entry.id
         }
     }
 
     private func selectAll() {
         withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
             selected.formUnion(matchingEntries.map(\.id))
+            focusedEntryID = focusedEntryID ?? matchingEntries.first?.id
         }
     }
 
     private func clearSelection() {
         withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
             selected.removeAll()
+            focusedEntryID = nil
         }
+    }
+
+    @ViewBuilder private var entryList: some View {
+        List(displayedEntries, selection: $selected) { entry in
+            ExplorerEntryRow(
+                entry: entry,
+                selected: selected.contains(entry.id),
+                isMeasuring: model.measuringEntries.contains(entry.id),
+                toggle: { toggle(entry) },
+                open: { open(entry) },
+                reveal: { model.reveal(entry.url) },
+                measure: { Task { await model.measureDirectoryEntry(entry) } }
+            )
+            .tag(entry.id)
+        }
+        .listStyle(.inset)
     }
 
     private func requestICloudEviction() {
@@ -433,7 +569,7 @@ struct FolderExplorerView: View {
     }
 }
 
-private enum ExplorerPresentation: Hashable { case list, grid }
+private enum ExplorerPresentation: Hashable { case list, grid, split }
 
 private enum ExplorerSort: String, CaseIterable, Identifiable {
     case name, largest, kind
@@ -482,7 +618,7 @@ private struct ExplorerEntryRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Button(action: toggle) { Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? .indigo : .secondary) }.buttonStyle(.plain)
-            Image(systemName: entry.isDirectory ? "folder.fill" : (entry.isICloud ? "icloud.fill" : "doc.fill")).foregroundStyle(entry.isICloud ? .blue : .indigo)
+            ExplorerEntryIcon(entry: entry, font: .body)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.url.lastPathComponent).lineLimit(1)
                 if entry.isICloud { Text(entry.isDownloaded ? "iCloud: stored locally" : "iCloud: online only").font(.caption).foregroundStyle(.secondary) }
@@ -498,8 +634,8 @@ private struct ExplorerEntryRow: View {
         }
         .contentShape(Rectangle())
         .background(selected ? .indigo.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .onTapGesture { toggle() }
         .onTapGesture(count: 2, perform: open)
+        .onDrag { NSItemProvider(object: entry.url as NSURL) }
         .animation(.spring(response: 0.22, dampingFraction: 0.86), value: selected)
     }
 }
@@ -508,14 +644,14 @@ private struct ExplorerEntryTile: View {
     let entry: DirectoryEntry
     let selected: Bool
     let isMeasuring: Bool
-    let toggle: () -> Void
+    let select: () -> Void
     let open: () -> Void
     let reveal: () -> Void
     let measure: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack { Image(systemName: entry.isDirectory ? "folder.fill" : (entry.isICloud ? "icloud.fill" : "doc.fill")).font(.title2).foregroundStyle(entry.isICloud ? .blue : .indigo); Spacer(); Button(action: toggle) { Image(systemName: selected ? "checkmark.circle.fill" : "circle") }.buttonStyle(.plain) }
+            HStack { ExplorerEntryIcon(entry: entry, font: .title2); Spacer(); Button(action: select) { Image(systemName: selected ? "checkmark.circle.fill" : "circle") }.buttonStyle(.plain) }
             Text(entry.url.lastPathComponent).font(.subheadline.weight(.medium)).lineLimit(2)
             if entry.isDirectory && !entry.isMeasured { Button(isMeasuring ? "Measuring…" : "Measure size", action: measure).buttonStyle(.link).disabled(isMeasuring) }
             else { Text(ByteCountFormatter.string(fromByteCount: entry.bytes, countStyle: .file)).font(.caption.monospaced()).foregroundStyle(.secondary) }
@@ -524,9 +660,96 @@ private struct ExplorerEntryTile: View {
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
         .background(selected ? .indigo.opacity(0.10) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .onTapGesture { toggle() }
+        .onTapGesture { select() }
         .onTapGesture(count: 2, perform: open)
+        .onDrag { NSItemProvider(object: entry.url as NSURL) }
         .animation(.spring(response: 0.22, dampingFraction: 0.86), value: selected)
+    }
+}
+
+private struct ExplorerEntryIcon: View {
+    let entry: DirectoryEntry
+    let font: Font
+
+    private var symbol: String {
+        if entry.isDirectory { return entry.isICloud ? "icloud.fill" : "folder.fill" }
+        switch entry.url.pathExtension.lowercased() {
+        case "jpg", "jpeg", "png", "gif", "heic", "webp", "tiff": return "photo.fill"
+        case "mov", "mp4", "m4v", "avi", "mkv": return "film.fill"
+        case "mp3", "m4a", "wav", "aiff", "flac": return "waveform"
+        case "pdf": return "doc.richtext.fill"
+        case "zip", "gz", "tgz", "rar", "7z", "tar": return "archivebox.fill"
+        case "swift", "js", "ts", "tsx", "jsx", "py", "rb", "go", "rs", "java", "json", "html", "css", "md": return "chevron.left.forwardslash.chevron.right"
+        case "app": return "app.fill"
+        case "dmg", "pkg": return "shippingbox.fill"
+        default: return "doc.fill"
+        }
+    }
+
+    private var color: Color {
+        if entry.isICloud { return .blue }
+        if entry.isDirectory { return .indigo }
+        switch entry.url.pathExtension.lowercased() {
+        case "jpg", "jpeg", "png", "gif", "heic", "webp", "tiff": return .pink
+        case "mov", "mp4", "m4v", "avi", "mkv": return .purple
+        case "mp3", "m4a", "wav", "aiff", "flac": return .orange
+        case "zip", "gz", "tgz", "rar", "7z", "tar": return .brown
+        case "swift", "js", "ts", "tsx", "jsx", "py", "rb", "go", "rs", "java": return .teal
+        default: return .secondary
+        }
+    }
+
+    var body: some View {
+        Image(systemName: symbol).font(font).foregroundStyle(color)
+    }
+}
+
+private struct ExplorerPreviewPane: View {
+    let entry: DirectoryEntry?
+    let isMeasuring: Bool
+    let open: () -> Void
+    let reveal: () -> Void
+    let measure: () -> Void
+
+    var body: some View {
+        Group {
+            if let entry {
+                VStack(alignment: .leading, spacing: 14) {
+                    ExplorerEntryIcon(entry: entry, font: .system(size: 34))
+                    Text(entry.url.lastPathComponent).font(.title3.weight(.semibold)).lineLimit(2)
+                    Text(entry.isDirectory ? "Folder" : entry.url.pathExtension.uppercased().isEmpty ? "File" : "\(entry.url.pathExtension.uppercased()) file")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    Text(entry.url.path).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                    if entry.isDirectory && !entry.isMeasured {
+                        Button(isMeasuring ? "Measuring…" : "Measure folder", action: measure)
+                            .buttonStyle(.bordered).disabled(isMeasuring)
+                    } else {
+                        Text(ByteCountFormatter.string(fromByteCount: entry.bytes, countStyle: .file))
+                            .font(.title3.monospacedDigit())
+                    }
+                    if entry.isICloud {
+                        Label(entry.isDownloaded ? "iCloud copy stored locally" : "iCloud item is online only", systemImage: "icloud")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    HStack {
+                        Button(entry.isDirectory ? "Open" : "Reveal", action: open).buttonStyle(.bordered)
+                        Button("Reveal", action: reveal).buttonStyle(.bordered)
+                    }
+                }
+                .padding(22)
+            } else {
+                VStack(spacing: 10) {
+                    Image(systemName: "sidebar.right").font(.title).foregroundStyle(.secondary)
+                    Text("Select an item to preview").font(.headline)
+                    Text("Use Command or Control click to add items, or Shift click for a range.").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(22)
+            }
+        }
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
     }
 }
 
