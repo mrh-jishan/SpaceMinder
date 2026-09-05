@@ -1,28 +1,28 @@
 import SwiftUI
 import AppKit
 
+private enum Workspace: String, CaseIterable, Identifiable {
+    case dashboard, discovery, explorer, pro
+    var id: String { rawValue }
+}
+
 struct ContentView: View {
     @EnvironmentObject private var model: StorageViewModel
     @State private var showConfirmation = false
-    @State private var showDiscovery = false
+    @State private var workspace: Workspace? = .dashboard
 
     var body: some View {
         NavigationSplitView {
-            Sidebar()
+            Sidebar(selection: $workspace)
         } detail: {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    header
-                    StorageHero(volume: model.volume)
-                    PermissionCard()
-                    cleanupSection
-                    insightSection
-                    if !model.history.isEmpty { historySection }
+            Group {
+                switch workspace ?? .dashboard {
+                case .dashboard: dashboard
+                case .discovery: DiscoveryView(onOpenExplorer: { workspace = .explorer })
+                case .explorer: FolderExplorerView()
+                case .pro: ProWorkspaceView()
                 }
-                .padding(32)
-                .frame(maxWidth: 1120, alignment: .leading)
             }
-            .background(Color(nsColor: .windowBackgroundColor))
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -45,9 +45,20 @@ struct ContentView: View {
         } message: {
             Text(model.notice ?? "")
         }
-        .sheet(isPresented: $showDiscovery) {
-            DiscoveryView().environmentObject(model)
+    }
+
+    private var dashboard: some View {
+        WorkspaceScrollPage {
+            VStack(alignment: .leading, spacing: 24) {
+                header
+                StorageHero(volume: model.volume)
+                PermissionCard()
+                cleanupSection
+                insightSection
+                if !model.history.isEmpty { historySection }
+            }
         }
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var header: some View {
@@ -59,7 +70,7 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button { showDiscovery = true } label: {
+            Button { workspace = .discovery } label: {
                 Label("Discovery Lab", systemImage: "sparkles")
             }
             .buttonStyle(.bordered)
@@ -121,13 +132,123 @@ struct ContentView: View {
     }
 }
 
+struct WorkspaceScrollPage<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        GeometryReader { proxy in
+            let horizontal = min(max(CGFloat(24), proxy.size.width * 0.055), CGFloat(64))
+            let vertical = min(max(CGFloat(24), proxy.size.height * 0.045), CGFloat(48))
+            ScrollView {
+                content()
+                    .frame(maxWidth: 1280, alignment: .leading)
+                    .padding(.horizontal, horizontal)
+                    .padding(.vertical, vertical)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+    }
+}
+
+private struct ProWorkspaceView: View {
+    @EnvironmentObject private var model: StorageViewModel
+    @AppStorage("spaceBudgetGigabytes") private var spaceBudgetGigabytes = 40.0
+
+    private var budgetBytes: Int64 { Int64(spaceBudgetGigabytes * 1_073_741_824) }
+
+    var body: some View {
+        WorkspaceScrollPage {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Label("Pro toolkit", systemImage: "crown.fill").font(.headline).foregroundStyle(.orange)
+                    Text("Space Pulse").font(.system(size: 30, weight: .bold, design: .rounded))
+                    Text("Persistent local storage history, a personal free-space budget, and attached-volume visibility. These tools are fully local and included while SpaceMinder is in preview.")
+                        .foregroundStyle(.secondary)
+                }
+                budgetCard
+                snapshotCard
+                volumesCard
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var budgetCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Free-space budget").font(.title3.weight(.semibold))
+                    Text("Set the amount of free storage you want to keep available.").font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(ByteCountFormatter.string(fromByteCount: budgetBytes, countStyle: .file)).font(.title3.weight(.bold)).monospacedDigit()
+            }
+            Slider(value: $spaceBudgetGigabytes, in: 10...150, step: 5)
+            HStack {
+                Label(model.volume.available >= budgetBytes ? "You are above your target" : "Below your target—review recommended cleanup", systemImage: model.volume.available >= budgetBytes ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(model.volume.available >= budgetBytes ? .green : .orange)
+                Spacer()
+                Text("Current free: \(ByteCountFormatter.string(fromByteCount: model.volume.available, countStyle: .file))").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(20)
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var snapshotCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Space Pulse history").font(.title3.weight(.semibold))
+            Text("A snapshot is recorded locally whenever SpaceMinder scans, making unexpected storage growth visible over time.").font(.subheadline).foregroundStyle(.secondary)
+            if model.snapshots.isEmpty {
+                Text("Your first scan will create a baseline.").foregroundStyle(.secondary).padding(.vertical, 8)
+            } else {
+                ForEach(model.snapshots.prefix(8)) { snapshot in
+                    HStack {
+                        Text(snapshot.date, style: .date)
+                        Text(snapshot.date, style: .time).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(ByteCountFormatter.string(fromByteCount: snapshot.availableBytes, countStyle: .file)) free").monospacedDigit()
+                        Text("\(ByteCountFormatter.string(fromByteCount: snapshot.recommendedBytes, countStyle: .file)) reclaimable").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline)
+                }
+            }
+        }
+        .padding(20)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var volumesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Attached volumes").font(.title3.weight(.semibold))
+            Text("External drives and mounted network locations can be selected in Folder Explorer for the same local analysis.").font(.subheadline).foregroundStyle(.secondary)
+            ForEach(model.mountedVolumes) { volume in
+                HStack {
+                    Image(systemName: "externaldrive.fill").foregroundStyle(.indigo)
+                    Text(volume.name).fontWeight(.medium)
+                    Spacer()
+                    Text("\(ByteCountFormatter.string(fromByteCount: volume.availableBytes, countStyle: .file)) free of \(ByteCountFormatter.string(fromByteCount: volume.totalBytes, countStyle: .file))").font(.caption).foregroundStyle(.secondary)
+                    Button("Reveal") { model.reveal(volume.url) }.buttonStyle(.link)
+                }
+            }
+        }
+        .padding(20)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
 private struct Sidebar: View {
     @EnvironmentObject private var model: StorageViewModel
+    @Binding var selection: Workspace?
     var body: some View {
-        List {
+        List(selection: $selection) {
             Section {
-                Label("Dashboard", systemImage: "internaldrive")
-                    .fontWeight(.semibold)
+                Label("Dashboard", systemImage: "internaldrive").tag(Workspace.dashboard)
+            }
+            Section("Workspaces") {
+                Label("Discovery Lab", systemImage: "sparkles").tag(Workspace.discovery)
+                Label("Folder Explorer", systemImage: "folder.badge.gearshape").tag(Workspace.explorer)
+                Label("Pro toolkit", systemImage: "crown").tag(Workspace.pro)
             }
             Section("Tools") {
                 Button { model.addCustomPath() } label: { Label("Inspect folder", systemImage: "folder.badge.plus") }

@@ -31,9 +31,8 @@ struct PermissionCard: View {
 
 struct DiscoveryView: View {
     @EnvironmentObject private var model: StorageViewModel
-    @Environment(\.dismiss) private var dismiss
+    let onOpenExplorer: () -> Void
     @State private var folders = DiscoveryView.defaultFolders
-    @State private var showExplorer = false
 
     private static var defaultFolders: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -41,33 +40,24 @@ struct DiscoveryView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .top) {
+        WorkspaceScrollPage {
+            VStack(alignment: .leading, spacing: 24) {
+                HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Discovery Lab").font(.system(size: 27, weight: .bold, design: .rounded))
+                    Text("Discovery Lab").font(.system(size: 30, weight: .bold, design: .rounded))
                     Text("Find exact duplicates using a two-pass, local-only scan.").foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button { showExplorer = true } label: { Label("Folder Explorer", systemImage: "folder.badge.gearshape") }
+                Button(action: onOpenExplorer) { Label("Folder Explorer", systemImage: "folder.badge.gearshape") }
                     .buttonStyle(.bordered)
-                Button("Done") { dismiss() }
-            }
-            .padding(28)
-
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    scanControl
-                    results
-                    privacyNote
                 }
-                .padding(28)
+                scanControl
+                developerPlanner
+                results
+                privacyNote
             }
         }
-        .frame(minWidth: 860, minHeight: 620)
-        .sheet(isPresented: $showExplorer) {
-            FolderExplorerView().environmentObject(model)
-        }
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var scanControl: some View {
@@ -135,6 +125,44 @@ struct DiscoveryView: View {
             .padding(.top, 5)
     }
 
+    private var developerPlanner: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Developer Reclaim Planner", systemImage: "hammer.fill").font(.title3.weight(.semibold))
+                    Text("Find generated dependencies and build output that can be recreated from a project’s source files. Nothing is removed automatically.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { Task { await model.scanDeveloperArtifacts(in: folders) } } label: {
+                    Label(model.isScanningDeveloperArtifacts ? "Scanning…" : "Find project artifacts", systemImage: "magnifyingglass")
+                }
+                .buttonStyle(.bordered)
+                .disabled(folders.isEmpty || model.isScanningDeveloperArtifacts)
+            }
+            Text(model.developerArtifactStatus).font(.caption).foregroundStyle(.secondary)
+            if !model.developerArtifacts.isEmpty {
+                let total = model.developerArtifacts.reduce(Int64(0)) { $0 + $1.bytes }
+                HStack { Text("Potentially re-creatable").font(.caption.weight(.semibold)); Spacer(); Text(ByteCountFormatter.string(fromByteCount: total, countStyle: .file)).font(.caption.weight(.bold)).monospacedDigit() }
+                ForEach(model.developerArtifacts.prefix(12)) { artifact in
+                    HStack(spacing: 9) {
+                        Image(systemName: "cube.transparent.fill").foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(artifact.url.lastPathComponent).fontWeight(.medium)
+                            Text("\(artifact.category) · \(artifact.url.deletingLastPathComponent().path)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        Text(ByteCountFormatter.string(fromByteCount: artifact.bytes, countStyle: .file)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                        Button("Inspect") { Task { await model.inspectDirectory(artifact.url); onOpenExplorer() } }.buttonStyle(.link)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .padding(20)
+        .background(.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
     private func chooseFolders() {
         let panel = NSOpenPanel()
         panel.title = "Choose folders to inspect for duplicates"
@@ -150,7 +178,6 @@ struct DiscoveryView: View {
 
 struct FolderExplorerView: View {
     @EnvironmentObject private var model: StorageViewModel
-    @Environment(\.dismiss) private var dismiss
     @State private var selected = Set<String>()
     @State private var confirmTrash = false
 
@@ -168,10 +195,30 @@ struct FolderExplorerView: View {
                 }
                 Spacer()
                 Button("Choose folder…") { chooseRoot() }
-                Button("Done") { dismiss() }
             }
-            .padding(28)
+            .padding(.horizontal, 32).padding(.vertical, 26)
             Divider()
+            if !model.mountedVolumes.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Text("Volumes").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        ForEach(model.mountedVolumes) { volume in
+                            Button {
+                                selected.removeAll()
+                                Task { await model.inspectDirectory(volume.url) }
+                            } label: {
+                                Label(volume.name, systemImage: "externaldrive.fill")
+                                    .font(.caption.weight(.medium))
+                                    .padding(.horizontal, 9).padding(.vertical, 6)
+                                    .background(.quaternary, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 28).padding(.vertical, 10)
+                }
+                Divider()
+            }
             if let inventory {
                 explorer(inventory)
             } else {
@@ -204,8 +251,9 @@ struct FolderExplorerView: View {
             .background(.quaternary.opacity(0.5))
 
             HStack(spacing: 10) {
-                Text("\(inventory.entries.count) items").font(.caption).foregroundStyle(.secondary)
+                Text("\(inventory.entries.count) direct items · \(inventory.scannedFiles.formatted()) files measured in one pass").font(.caption).foregroundStyle(.secondary)
                 if inventory.inaccessibleItems > 0 { Text("\(inventory.inaccessibleItems) protected item(s) skipped").font(.caption).foregroundStyle(.orange) }
+                if inventory.wasCapped { Text("Scan capped at 150,000 files—choose a narrower folder for complete results.").font(.caption).foregroundStyle(.orange) }
                 Spacer()
                 if !iCloudEntries.isEmpty {
                     Button("Remove local iCloud copies") { model.removeLocalICloudCopies(iCloudEntries); selected.removeAll() }

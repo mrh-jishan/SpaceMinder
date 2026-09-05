@@ -2,6 +2,14 @@
 
 SpaceMinder is a fully native macOS storage intelligence and cleanup app written in Swift and SwiftUI. It does not use Electron, a web view, JavaScript, a server, or external analytics.
 
+## Download
+
+- [Latest release and installation notes](https://github.com/mrh-jishan/SpaceMinder/releases/latest)
+- [All released versions](https://github.com/mrh-jishan/SpaceMinder/releases)
+- [Latest universal DMG](https://github.com/mrh-jishan/SpaceMinder/releases/latest/download/SpaceMinder-latest.dmg) — available after the first version tag is published
+
+Each release includes its versioned DMG, a permanent `SpaceMinder-latest.dmg` link, and SHA-256 checksums. See [CHANGELOG.md](CHANGELOG.md) for release history.
+
 ## Features
 
 - Native SwiftUI interface and Apple filesystem APIs
@@ -11,8 +19,11 @@ SpaceMinder is a fully native macOS storage intelligence and cleanup app written
 - Local cleanup history, custom **scan-only** folders, and optional launch-at-login
 - Folder Explorer: navigate any chosen folder, measure physical space per direct child, reveal it in Finder, and move selected non-iCloud items to Trash
 - Duplicate Radar: efficient two-pass SHA-256 matching that hashes only equal-size files; it is local-only and never deletes files
+- Developer Reclaim Planner: identifies re-creatable `node_modules`, build output, virtual environments, Xcode artifacts, and project caches before you remove anything
 - iCloud Drive local-copy offloading, which preserves iCloud originals while freeing downloaded local copies
 - Trash as a measured, first-class cleanup target
+- Space Pulse: persistent local scan history, a configurable free-space budget, and attached-volume visibility
+- Responsive native workspaces for Dashboard, Discovery Lab, Folder Explorer, and the Pro-ready toolkit—no blocking modal navigation
 - No account, network traffic, analytics, or cloud storage
 
 ## Run during development

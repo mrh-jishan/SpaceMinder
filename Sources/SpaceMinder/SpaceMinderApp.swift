@@ -89,6 +89,14 @@ struct CleanupEvent: Codable, Identifiable {
     let freedBytes: Int64
 }
 
+struct StorageSnapshot: Codable, Identifiable {
+    let id: UUID
+    let date: Date
+    let totalBytes: Int64
+    let availableBytes: Int64
+    let recommendedBytes: Int64
+}
+
 struct DuplicateFile: Identifiable, Hashable {
     let url: URL
     let bytes: Int64
@@ -122,6 +130,28 @@ struct DirectoryInventory: Sendable {
     let root: URL
     let entries: [DirectoryEntry]
     let inaccessibleItems: Int
+    let scannedFiles: Int
+    let wasCapped: Bool
+}
+
+struct MountedVolume: Identifiable, Hashable {
+    let url: URL
+    let name: String
+    let totalBytes: Int64
+    let availableBytes: Int64
+    var id: String { url.path }
+}
+
+struct DeveloperArtifact: Identifiable, Hashable, Sendable {
+    let url: URL
+    let category: String
+    let bytes: Int64
+    var id: String { url.path }
+}
+
+struct DeveloperArtifactResult: Sendable {
+    let artifacts: [DeveloperArtifact]
+    let wasCapped: Bool
 }
 
 @MainActor
@@ -140,6 +170,11 @@ final class StorageViewModel: ObservableObject {
     @Published private(set) var protectedLocationsAvailable = false
     @Published private(set) var inventory: DirectoryInventory?
     @Published var isInspectingDirectory = false
+    @Published private(set) var mountedVolumes: [MountedVolume] = []
+    @Published private(set) var snapshots: [StorageSnapshot] = []
+    @Published private(set) var developerArtifacts: [DeveloperArtifact] = []
+    @Published private(set) var developerArtifactStatus = "Choose a workspace to find re-creatable development artifacts."
+    @Published var isScanningDeveloperArtifacts = false
     @AppStorage("launchAtLogin") var launchAtLogin = false
     @AppStorage("customScanPaths") private var customScanPathsData = Data()
 
@@ -148,6 +183,7 @@ final class StorageViewModel: ObservableObject {
 
     init() {
         history = CleanupHistory.load()
+        snapshots = SnapshotHistory.load()
         protectedLocationsAvailable = PermissionProbe.canReadProtectedLocations()
     }
 
@@ -169,6 +205,8 @@ final class StorageViewModel: ObservableObject {
         volume = result.volume
         cleanupTargets = result.cleanup
         insightTargets = result.insights
+        mountedVolumes = VolumeScanner.mounted()
+        recordSnapshot(recommendedBytes: result.cleanup.reduce(0) { $0 + $1.bytes })
         selected = selected.intersection(Set(result.cleanup.filter(\.exists).map(\.id)))
         isScanning = false
     }
@@ -241,11 +279,32 @@ final class StorageViewModel: ObservableObject {
         protectedLocationsAvailable = PermissionProbe.canReadProtectedLocations()
     }
 
+    private func recordSnapshot(recommendedBytes: Int64) {
+        let current = StorageSnapshot(id: UUID(), date: .now, totalBytes: volume.total, availableBytes: volume.available, recommendedBytes: recommendedBytes)
+        if let newest = snapshots.first, newest.date.timeIntervalSinceNow > -1_800 {
+            snapshots[0] = current
+        } else {
+            snapshots.insert(current, at: 0)
+        }
+        snapshots = Array(snapshots.prefix(60))
+        SnapshotHistory.save(snapshots)
+    }
+
     func inspectDirectory(_ url: URL) async {
         isInspectingDirectory = true
         let result = await Task.detached(priority: .userInitiated) { DirectoryInspector.inspect(url) }.value
         inventory = result
         isInspectingDirectory = false
+    }
+
+    func scanDeveloperArtifacts(in roots: [URL]) async {
+        guard !roots.isEmpty else { return }
+        isScanningDeveloperArtifacts = true
+        developerArtifactStatus = "Looking for generated development folders…"
+        let result = await Task.detached(priority: .userInitiated) { DeveloperArtifactFinder.find(in: roots) }.value
+        developerArtifacts = result.artifacts
+        developerArtifactStatus = "Found \(result.artifacts.count) re-creatable artifact(s).\(result.wasCapped ? " Scan capped at 100 folders; narrow the workspace for complete results." : "")"
+        isScanningDeveloperArtifacts = false
     }
 
     func trash(_ entries: [DirectoryEntry]) {
@@ -383,27 +442,91 @@ private enum DuplicateFinder {
 }
 
 private enum DirectoryInspector {
-    static func inspect(_ root: URL) -> DirectoryInventory {
+    static func inspect(_ root: URL, maxFiles: Int = 150_000) -> DirectoryInventory {
         let manager = FileManager.default
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .fileSizeKey]
         var inaccessible = 0
         let urls = (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: Array(keys), options: [])) ?? []
-        let entries = urls.compactMap { url -> DirectoryEntry? in
+        var entries = urls.compactMap { url -> DirectoryEntry? in
             guard let values = try? url.resourceValues(forKeys: keys) else { inaccessible += 1; return nil }
             let directory = values.isDirectory == true
-            let bytes = directory ? recursiveAllocatedSize(url, keys: keys, inaccessible: &inaccessible) : Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? values.fileSize ?? 0)
-            return DirectoryEntry(url: url, bytes: bytes, isDirectory: directory, isICloud: values.isUbiquitousItem == true, isDownloaded: values.ubiquitousItemDownloadingStatus == .current)
+            return DirectoryEntry(url: url, bytes: 0, isDirectory: directory, isICloud: values.isUbiquitousItem == true, isDownloaded: values.ubiquitousItemDownloadingStatus == .current)
         }
-        return DirectoryInventory(root: root, entries: entries.sorted { $0.bytes > $1.bytes }, inaccessibleItems: inaccessible)
-    }
-
-    private static func recursiveAllocatedSize(_ root: URL, keys: Set<URLResourceKey>, inaccessible: inout Int) -> Int64 {
-        let manager = FileManager.default
-        guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants], errorHandler: { _, _ in true }) else { return 0 }
-        var total: Int64 = 0
+        var totals = Dictionary(uniqueKeysWithValues: entries.map { ($0.url.path, Int64(0)) })
+        var scannedFiles = 0
+        var capped = false
+        let rootPath = root.standardizedFileURL.path
+        guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [], errorHandler: { _, _ in inaccessible += 1; return true }) else {
+            return DirectoryInventory(root: root, entries: entries, inaccessibleItems: inaccessible, scannedFiles: 0, wasCapped: false)
+        }
         for case let item as URL in enumerator {
             guard let values = try? item.resourceValues(forKeys: keys) else { inaccessible += 1; continue }
             guard values.isDirectory != true else { continue }
+            scannedFiles += 1
+            if scannedFiles > maxFiles { capped = true; break }
+            let relative = item.standardizedFileURL.path.dropFirst(rootPath.count).split(separator: "/", maxSplits: 1).first
+            guard let firstComponent = relative else { continue }
+            let directPath = root.appendingPathComponent(String(firstComponent)).path
+            totals[directPath, default: 0] += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? values.fileSize ?? 0)
+        }
+        entries = entries.map { entry in
+            DirectoryEntry(url: entry.url, bytes: totals[entry.url.path] ?? 0, isDirectory: entry.isDirectory, isICloud: entry.isICloud, isDownloaded: entry.isDownloaded)
+        }
+        return DirectoryInventory(root: root, entries: entries.sorted { $0.bytes > $1.bytes }, inaccessibleItems: inaccessible, scannedFiles: scannedFiles, wasCapped: capped)
+    }
+}
+
+private enum VolumeScanner {
+    static func mounted() -> [MountedVolume] {
+        let keys: Set<URLResourceKey> = [.volumeNameKey, .volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey]
+        guard let urls = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: Array(keys), options: [.skipHiddenVolumes]) else { return [] }
+        return urls.compactMap { url in
+            guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
+            let available = values.volumeAvailableCapacityForImportantUsage ?? Int64(values.volumeAvailableCapacity ?? 0)
+            return MountedVolume(url: url, name: values.volumeName ?? url.lastPathComponent, totalBytes: Int64(values.volumeTotalCapacity ?? 0), availableBytes: available)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+}
+
+private enum DeveloperArtifactFinder {
+    private static let categories: [String: String] = [
+        "node_modules": "JavaScript dependencies",
+        ".next": "Next.js build output",
+        "dist": "Distribution build output",
+        "build": "Build output",
+        ".turbo": "Turborepo cache",
+        ".venv": "Python virtual environment",
+        "venv": "Python virtual environment",
+        "DerivedData": "Xcode derived data",
+        "Pods": "CocoaPods dependencies",
+        ".gradle": "Gradle cache"
+    ]
+
+    static func find(in roots: [URL], maxArtifacts: Int = 100) -> DeveloperArtifactResult {
+        let manager = FileManager.default
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .fileSizeKey]
+        var artifacts: [DeveloperArtifact] = []
+        var capped = false
+        outer: for root in roots {
+            guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants], errorHandler: { _, _ in true }) else { continue }
+            for case let url as URL in enumerator {
+                guard let values = try? url.resourceValues(forKeys: keys), values.isDirectory == true,
+                      let category = categories[url.lastPathComponent] else { continue }
+                enumerator.skipDescendants()
+                artifacts.append(DeveloperArtifact(url: url, category: category, bytes: allocatedSize(of: url, keys: keys)))
+                if artifacts.count >= maxArtifacts { capped = true; break outer }
+            }
+        }
+        return DeveloperArtifactResult(artifacts: artifacts.sorted { $0.bytes > $1.bytes }, wasCapped: capped)
+    }
+
+    private static func allocatedSize(of root: URL, keys: Set<URLResourceKey>) -> Int64 {
+        let manager = FileManager.default
+        guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants], errorHandler: { _, _ in true }) else { return 0 }
+        var total: Int64 = 0
+        for case let file as URL in enumerator {
+            guard let values = try? file.resourceValues(forKeys: keys), values.isDirectory != true else { continue }
             total += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? values.fileSize ?? 0)
         }
         return total
@@ -466,6 +589,16 @@ private enum CleanupHistory {
     }
     static func load() -> [CleanupEvent] { (try? JSONDecoder().decode([CleanupEvent].self, from: Data(contentsOf: file))) ?? [] }
     static func save(_ history: [CleanupEvent]) { try? JSONEncoder().encode(Array(history.prefix(100))).write(to: file, options: .atomic) }
+}
+
+private enum SnapshotHistory {
+    private static var file: URL {
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "SpaceMinder")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appending(path: "storage-snapshots.json")
+    }
+    static func load() -> [StorageSnapshot] { (try? JSONDecoder().decode([StorageSnapshot].self, from: Data(contentsOf: file))) ?? [] }
+    static func save(_ snapshots: [StorageSnapshot]) { try? JSONEncoder().encode(Array(snapshots.prefix(60))).write(to: file, options: .atomic) }
 }
 
 private extension URL {

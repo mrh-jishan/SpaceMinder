@@ -55,7 +55,12 @@ jobs:
         run: zsh scripts/notarize-app.sh
 
       - name: Create DMG and checksum
-        run: zsh scripts/create-dmg.sh
+        run: |
+          zsh scripts/create-dmg.sh
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            cp "dist/SpaceMinder-${GITHUB_REF_NAME#v}.dmg" dist/SpaceMinder-latest.dmg
+            shasum -a 256 dist/SpaceMinder-latest.dmg > dist/SpaceMinder-latest.dmg.sha256
+          fi
 
       - name: Verify app bundle
         run: |
