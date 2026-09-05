@@ -1,0 +1,24 @@
+SpaceMinder — Install and privacy guide
+
+1. Drag SpaceMinder.app into Applications.
+2. Open it from Applications.
+3. If this is an ad-hoc-signed direct download, Control-click SpaceMinder.app
+   and choose Open once. This is macOS Gatekeeper protecting you from
+   unnotarized software.
+
+Optional: fuller storage measurements
+-------------------------------------
+SpaceMinder works without special access for your own Downloads, Desktop,
+Trash, developer caches, and selected folders.
+
+To include protected app data in system-wide measurements, use the "Open
+Privacy Settings" button in SpaceMinder and enable it under Full Disk Access.
+macOS requires you to make this choice after installation; installers and apps
+cannot grant Full Disk Access themselves. This protects your Mail, Messages,
+browser, and other sensitive data from silently being read by software.
+
+Privacy
+-------
+SpaceMinder has no account, analytics, or file upload. Duplicate detection,
+folder measurements, iCloud local-copy offloading, and cleanup run only on
+this Mac.

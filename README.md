@@ -9,6 +9,10 @@ SpaceMinder is a fully native macOS storage intelligence and cleanup app written
 - Fixed safe-cleanup allow-list; the interface cannot submit arbitrary deletion paths
 - Explicit destructive confirmation and app-running checks for Chrome, Xcode, and Docker
 - Local cleanup history, custom **scan-only** folders, and optional launch-at-login
+- Folder Explorer: navigate any chosen folder, measure physical space per direct child, reveal it in Finder, and move selected non-iCloud items to Trash
+- Duplicate Radar: efficient two-pass SHA-256 matching that hashes only equal-size files; it is local-only and never deletes files
+- iCloud Drive local-copy offloading, which preserves iCloud originals while freeing downloaded local copies
+- Trash as a measured, first-class cleanup target
 - No account, network traffic, analytics, or cloud storage
 
 ## Run during development
@@ -20,7 +24,7 @@ cd spaceminder
 swift run SpaceMinder
 ```
 
-If macOS cannot inspect a protected folder, grant the built app **Full Disk Access** in System Settings → Privacy & Security → Full Disk Access, then scan again. The app is still restricted to its fixed user-library cleanup locations.
+If macOS cannot inspect a protected folder, SpaceMinder shows an **Open Privacy Settings** action. Grant the built app **Full Disk Access** in System Settings → Privacy & Security → Full Disk Access, then scan again. The app remains useful without it for ordinary user folders. Apple does not allow an installer or app to grant Full Disk Access silently: the user must enable it after installation.
 
 ## Build a universal native `.app`
 

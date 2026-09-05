@@ -4,6 +4,7 @@ import AppKit
 struct ContentView: View {
     @EnvironmentObject private var model: StorageViewModel
     @State private var showConfirmation = false
+    @State private var showDiscovery = false
 
     var body: some View {
         NavigationSplitView {
@@ -13,6 +14,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     header
                     StorageHero(volume: model.volume)
+                    PermissionCard()
                     cleanupSection
                     insightSection
                     if !model.history.isEmpty { historySection }
@@ -43,6 +45,9 @@ struct ContentView: View {
         } message: {
             Text(model.notice ?? "")
         }
+        .sheet(isPresented: $showDiscovery) {
+            DiscoveryView().environmentObject(model)
+        }
     }
 
     private var header: some View {
@@ -54,6 +59,10 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Button { showDiscovery = true } label: {
+                Label("Discovery Lab", systemImage: "sparkles")
+            }
+            .buttonStyle(.bordered)
             if model.isCleaning { ProgressView().controlSize(.small) }
         }
     }
@@ -74,7 +83,7 @@ struct ContentView: View {
 
             VStack(spacing: 8) {
                 ForEach(model.cleanupTargets) { target in
-                    CleanupRow(target: target, isSelected: model.selected.contains(target.id)) {
+                    CleanupRow(target: target, isSelected: model.selected.contains(target.id), reveal: { model.reveal(target.url) }) {
                         if model.selected.contains(target.id) { model.selected.remove(target.id) }
                         else if target.exists { model.selected.insert(target.id) }
                     }
@@ -168,41 +177,45 @@ private struct StorageHero: View {
 private struct CleanupRow: View {
     let target: StorageTarget
     let isSelected: Bool
+    let reveal: () -> Void
     let toggle: () -> Void
     var body: some View {
-        Button(action: toggle) {
-            HStack(spacing: 14) {
+        HStack(spacing: 14) {
+            Button(action: toggle) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3).foregroundStyle(isSelected ? Color.indigo : Color.secondary.opacity(0.55))
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(target.title).fontWeight(.semibold)
-                        Text(target.safety.rawValue.uppercased()).font(.caption2.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 3).background(target.safety.tint.opacity(0.16), in: Capsule()).foregroundStyle(target.safety.tint)
-                    }
-                    Text(target.detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                    if !target.appsToQuit.isEmpty { Text("Quit \(target.appsToQuit.joined(separator: " and ")) first").font(.caption).foregroundStyle(.orange) }
-                }
-                Spacer()
-                Text(target.exists ? ByteCountFormatter.string(fromByteCount: target.bytes, countStyle: .file) : "Not found")
-                    .font(.system(.body, design: .monospaced).weight(.semibold)).foregroundStyle(target.exists ? .primary : .tertiary)
             }
             .padding(15)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(!target.exists)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(target.title).fontWeight(.semibold)
+                    Text(target.safety.rawValue.uppercased()).font(.caption2.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 3).background(target.safety.tint.opacity(0.16), in: Capsule()).foregroundStyle(target.safety.tint)
+                }
+                Text(target.detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                if !target.appsToQuit.isEmpty { Text("Quit \(target.appsToQuit.joined(separator: " and ")) first").font(.caption).foregroundStyle(.orange) }
+            }
+            Spacer()
+            Text(target.exists ? ByteCountFormatter.string(fromByteCount: target.bytes, countStyle: .file) : "Not found")
+                .font(.system(.body, design: .monospaced).weight(.semibold)).foregroundStyle(target.exists ? .primary : .tertiary)
+            Button("Reveal", action: reveal).buttonStyle(.link).disabled(!target.exists)
         }
-        .buttonStyle(.plain)
-        .disabled(!target.exists)
+        .padding(.horizontal, 15).padding(.vertical, 9)
         .background(isSelected ? .indigo.opacity(0.09) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(isSelected ? Color.indigo.opacity(0.35) : Color.gray.opacity(0.22), lineWidth: 1))
     }
 }
 
 private struct InsightCard: View {
+    @EnvironmentObject private var model: StorageViewModel
     let target: StorageTarget
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack { Image(systemName: "folder").foregroundStyle(.indigo); Spacer(); Text(ByteCountFormatter.string(fromByteCount: target.bytes, countStyle: .file)).font(.caption.weight(.semibold)).monospacedDigit() }
             Text(target.title).fontWeight(.semibold)
             Text(target.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button("Reveal in Finder") { model.reveal(target.url) }.buttonStyle(.link).font(.caption)
         }
         .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
         .padding(16)

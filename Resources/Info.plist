@@ -6,6 +6,7 @@
   <key>CFBundleDisplayName</key><string>SpaceMinder</string>
   <key>CFBundleExecutable</key><string>SpaceMinder</string>
   <key>CFBundleIdentifier</key><string>com.spaceminder.app</string>
+  <key>CFBundleIconFile</key><string>SpaceMinder</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>SpaceMinder</string>
   <key>CFBundlePackageType</key><string>APPL</string>
