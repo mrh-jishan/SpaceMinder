@@ -35,7 +35,9 @@ The resulting `dist/SpaceMinder.app` contains an Apple Silicon and Intel univers
 
 ## Distribute to other Macs
 
-To open without Gatekeeper warnings on other Macs, sign the app with a **Developer ID Application** certificate and notarize it using your Apple Developer account. This is an Apple distribution requirement; it cannot be completed without the account’s signing credentials. GitHub Actions performs this automatically for version tags once the repository secrets in [RELEASING.md](RELEASING.md) are configured.
+You can distribute a universal, direct-download DMG from GitHub Releases without an Apple Developer subscription. Recipients should download the DMG, drag the app to Applications, then Control-click the app in Finder and choose **Open** on first launch. macOS requires this warning for any app that is not Developer ID signed and notarized.
+
+To remove that warning, sign the app with a **Developer ID Application** certificate and notarize it using your Apple Developer account. GitHub Actions performs this automatically for version tags once the repository secrets in [RELEASING.md](RELEASING.md) are configured.
 
 ```zsh
 codesign --force --deep --options runtime --timestamp --sign "Developer ID Application: Your Company (TEAMID)" dist/SpaceMinder.app

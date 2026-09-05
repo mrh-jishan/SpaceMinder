@@ -54,12 +54,6 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: zsh scripts/notarize-app.sh
 
-      - name: Refuse unsigned tag releases
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          test "$HAS_SIGNING_CERTIFICATE" = "true" || { echo "Add the Apple signing certificate secrets before publishing a release." >&2; exit 1; }
-          test "$HAS_NOTARY_CREDENTIALS" = "true" || { echo "Add the Apple notarization secrets before publishing a release." >&2; exit 1; }
-
       - name: Create DMG and checksum
         run: zsh scripts/create-dmg.sh
 
@@ -85,6 +79,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          notes="$RUNNER_TEMP/release-notes.md"
+          if [[ "$HAS_SIGNING_CERTIFICATE" == "true" && "$HAS_NOTARY_CREDENTIALS" == "true" ]]; then
+            cat > "$notes" <<'EOF'
+          This universal DMG is Developer ID signed and Apple notarized for Intel and Apple Silicon Macs.
+          EOF
+          else
+            cat > "$notes" <<'EOF'
+          ## Direct install (no Apple Developer subscription required)
+
+          This universal DMG is an ad-hoc-signed build for Intel and Apple Silicon Macs. Download the `.dmg`, open it, and drag **SpaceMinder** to Applications.
+
+          Because it is not Apple-notarized, macOS will show an “unidentified developer” warning on first launch. In Finder, **Control-click SpaceMinder.app → Open → Open**. This is expected for any app distributed outside the Mac App Store without a Developer ID certificate.
+
+          Verify the download before opening it:
+
+          ```zsh
+          shasum -a 256 SpaceMinder-*.dmg
+          ```
+
+          The matching expected checksum is included as a `.sha256` release asset.
+          EOF
+          fi
           gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.dmg.sha256 \
             --title "SpaceMinder ${GITHUB_REF_NAME#v}" \
-            --generate-notes
+            --notes-file "$notes"
