@@ -31,11 +31,11 @@ scripts/build-universal-app.sh
 open dist
 ```
 
-The resulting `dist/SpaceMinder.app` contains an Apple Silicon and Intel universal binary. The script applies an ad-hoc signature suitable for local use.
+The resulting `dist/SpaceMinder.app` contains an Apple Silicon and Intel universal binary. The script applies an ad-hoc signature suitable for local use. Create a local installer with `zsh scripts/create-dmg.sh`.
 
 ## Distribute to other Macs
 
-To open without Gatekeeper warnings on other Macs, sign the app with a **Developer ID Application** certificate and notarize it using your Apple Developer account. This is an Apple distribution requirement; it cannot be completed without the account’s signing credentials.
+To open without Gatekeeper warnings on other Macs, sign the app with a **Developer ID Application** certificate and notarize it using your Apple Developer account. This is an Apple distribution requirement; it cannot be completed without the account’s signing credentials. GitHub Actions performs this automatically for version tags once the repository secrets in [RELEASING.md](RELEASING.md) are configured.
 
 ```zsh
 codesign --force --deep --options runtime --timestamp --sign "Developer ID Application: Your Company (TEAMID)" dist/SpaceMinder.app

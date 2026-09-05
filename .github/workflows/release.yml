@@ -1,0 +1,90 @@
+name: Build and release SpaceMinder
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      # A real identity is injected after importing the Developer ID certificate.
+      CODE_SIGN_IDENTITY: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' && 'Developer ID Application' || '-' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm release tag matches app version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)
+          test "${GITHUB_REF_NAME#v}" = "$version"
+
+      - name: Import Developer ID certificate
+        if: secrets.APPLE_CERTIFICATE_P12_BASE64 != ''
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p "" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "" "$keychain"
+          echo "$CERTIFICATE_BASE64" | base64 -D > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security list-keychain -d user -s "$keychain" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$keychain"
+
+      - name: Build universal native app
+        run: zsh scripts/build-universal-app.sh
+
+      - name: Notarize release app
+        if: startsWith(github.ref, 'refs/tags/') && secrets.APPLE_CERTIFICATE_P12_BASE64 != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: zsh scripts/notarize-app.sh
+
+      - name: Refuse unsigned tag releases
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          test -n "${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}" || { echo "Add the Apple signing secrets before publishing a release." >&2; exit 1; }
+          test -n "${{ secrets.APPLE_ID }}" || { echo "Add APPLE_ID before publishing a release." >&2; exit 1; }
+          test -n "${{ secrets.APPLE_TEAM_ID }}" || { echo "Add APPLE_TEAM_ID before publishing a release." >&2; exit 1; }
+          test -n "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" || { echo "Add APPLE_APP_SPECIFIC_PASSWORD before publishing a release." >&2; exit 1; }
+
+      - name: Create DMG and checksum
+        run: zsh scripts/create-dmg.sh
+
+      - name: Verify app bundle
+        run: |
+          plutil -lint dist/SpaceMinder.app/Contents/Info.plist
+          xcrun lipo -info dist/SpaceMinder.app/Contents/MacOS/SpaceMinder | grep -E 'arm64.*x86_64|x86_64.*arm64'
+          codesign --verify --deep --strict --verbose=2 dist/SpaceMinder.app
+          test -s dist/*.dmg
+          test -s dist/*.dmg.sha256
+
+      - name: Upload installable CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpaceMinder-${{ github.sha }}
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.dmg.sha256 \
+            --title "SpaceMinder ${GITHUB_REF_NAME#v}" \
+            --generate-notes

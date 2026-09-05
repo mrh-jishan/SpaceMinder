@@ -34,5 +34,10 @@ if ! xcrun lipo -info "$app_dir/Contents/MacOS/SpaceMinder" | grep -q 'arm64.*x8
   exit 1
 fi
 cp "$project_dir/Resources/Info.plist" "$app_dir/Contents/Info.plist"
-codesign --force --deep --sign - "$app_dir"
+signing_identity="${CODE_SIGN_IDENTITY:--}"
+if [[ "$signing_identity" == "-" ]]; then
+  codesign --force --deep --sign - "$app_dir"
+else
+  codesign --force --deep --options runtime --timestamp --sign "$signing_identity" "$app_dir"
+fi
 echo "Created $app_dir"
