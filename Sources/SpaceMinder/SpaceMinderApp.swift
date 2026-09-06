@@ -59,6 +59,32 @@ struct StorageTarget: Identifiable, Hashable {
         .init(id: "bun-cache", title: "Bun package cache", detail: "Downloaded Bun packages. Projects can restore them with Bun.", url: home(".bun/install/cache"), kind: .directory, safety: .safe, appsToQuit: []),
         .init(id: "node-gyp-cache", title: "Node build cache", detail: "Node-gyp headers and compiled build prerequisites. They can be recreated.", url: home(".cache/node-gyp"), kind: .directory, safety: .safe, appsToQuit: []),
         .init(id: "corepack-cache", title: "Corepack package-manager cache", detail: "Downloaded package-manager releases for npm, Yarn, and pnpm.", url: home("Library/Caches/node/corepack"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "pip-cache", title: "pip download cache", detail: "Downloaded Python packages and wheels. pip downloads them again when needed.", url: home("Library/Caches/pip"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "pip-cache-alt", title: "pip alternate cache", detail: "Python package downloads stored by XDG-style pip installations. Packages can be fetched again.", url: home(".cache/pip"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "poetry-cache", title: "Poetry package cache", detail: "Downloaded Python packages cached by Poetry. Project environments are not removed.", url: home("Library/Caches/pypoetry"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "uv-cache", title: "uv package cache", detail: "Downloaded Python packages and wheels cached by uv. They can be restored from registries.", url: home("Library/Caches/uv"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "pyenv-build-cache", title: "pyenv build download cache", detail: "Python source archives cached while pyenv builds interpreters. Installed Python versions are not removed.", url: home(".pyenv/cache"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "rbenv-build-cache", title: "rbenv build download cache", detail: "Ruby source archives cached while rbenv builds interpreters. Installed Ruby versions are not removed.", url: home(".rbenv/cache"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "nodenv-build-cache", title: "nodenv build download cache", detail: "Node.js source archives cached while nodenv builds runtimes. Installed Node versions are not removed.", url: home(".nodenv/cache"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "asdf-download-cache", title: "asdf runtime downloads", detail: "Downloaded archives used by asdf plugins. Installed runtimes and version settings are not removed.", url: home(".asdf/downloads"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "mise-cache", title: "mise cache", detail: "Downloaded runtime archives and temporary data cached by mise. Installed runtimes are not removed.", url: home("Library/Caches/mise"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "mise-download-cache", title: "mise runtime downloads", detail: "Downloaded archives used to install mise-managed runtimes. Installed runtimes are not removed.", url: home(".local/share/mise/downloads"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "nvm-download-cache", title: "nvm download cache", detail: "Downloaded Node.js archives cached by nvm. Installed Node versions are not removed.", url: home(".nvm/.cache"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "rustup-download-cache", title: "rustup downloads", detail: "Downloaded Rust toolchain archives. Installed Rust toolchains are not removed.", url: home(".rustup/downloads"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "sdkman-download-cache", title: "SDKMAN downloads", detail: "Downloaded JVM and SDK archives awaiting or supporting installation. Installed SDKs are not removed.", url: home(".sdkman/tmp"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "rvm-download-cache", title: "RVM download cache", detail: "Downloaded Ruby archives cached by RVM. Installed Ruby versions are not removed.", url: home(".rvm/archives"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "homebrew-cache", title: "Homebrew download cache", detail: "Downloaded Homebrew formula and Cask archives. Installed formulae and apps are not removed.", url: home("Library/Caches/Homebrew"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "homebrew-logs", title: "Homebrew logs", detail: "Homebrew build and diagnostic logs. Installed formulae and apps are not removed.", url: home("Library/Logs/Homebrew"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "maven-cache", title: "Maven local repository", detail: "Java and JVM dependencies, which can include artifacts installed locally. Review before removal; public packages download again when projects build.", url: home(".m2/repository"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "gradle-cache", title: "Gradle dependency cache", detail: "Downloaded Gradle dependencies and transforms. Project files and Gradle settings stay intact.", url: home(".gradle/caches"), kind: .directory, safety: .redownloadable, appsToQuit: []),
+        .init(id: "gradle-wrapper-cache", title: "Gradle wrapper downloads", detail: "Downloaded Gradle distributions. The wrapper downloads them again when needed.", url: home(".gradle/wrapper/dists"), kind: .directory, safety: .redownloadable, appsToQuit: []),
+        .init(id: "cocoapods-cache", title: "CocoaPods download cache", detail: "Downloaded Ruby CocoaPods archives. Pods in projects are not removed.", url: home("Library/Caches/CocoaPods"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "rubygems-download-cache", title: "RubyGems download cache", detail: "Downloaded Ruby gem archives shared across Ruby installations. Installed gems are not removed.", url: home(".cache/gem/gems"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "rubygems-spec-cache", title: "RubyGems specification cache", detail: "Cached RubyGem repository metadata. RubyGems fetches it again when needed.", url: home(".gem/specs"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "go-build-cache", title: "Go build cache", detail: "Compiled Go build artifacts. Go recreates them on the next build.", url: home("Library/Caches/go-build"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "go-module-download-cache", title: "Go module download cache", detail: "Downloaded Go module archives. Modules can be fetched again with Go.", url: home("go/pkg/mod/cache/download"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "cargo-registry-cache", title: "Cargo registry cache", detail: "Downloaded Rust crate archives. Cargo can download them again.", url: home(".cargo/registry/cache"), kind: .directory, safety: .safe, appsToQuit: []),
+        .init(id: "cargo-git-cache", title: "Cargo Git cache", detail: "Cached Rust Git dependencies. Cargo can fetch them again.", url: home(".cargo/git/db"), kind: .directory, safety: .safe, appsToQuit: []),
         .init(id: "huggingface-cache", title: "Hugging Face models", detail: "Downloaded AI models. They will download again if used.", url: home(".cache/huggingface"), kind: .directory, safety: .redownloadable, appsToQuit: []),
         .init(id: "ollama-models", title: "Ollama models", detail: "Downloaded local AI models. Pull them again with Ollama if needed.", url: home(".ollama/models"), kind: .directory, safety: .redownloadable, appsToQuit: ["Ollama"]),
         .init(id: "lm-studio-cache", title: "LM Studio models", detail: "Downloaded local AI models. Review models before removing them.", url: home(".cache/lm-studio/models"), kind: .directory, safety: .redownloadable, appsToQuit: ["LM Studio"]),
@@ -71,6 +97,19 @@ struct StorageTarget: Identifiable, Hashable {
     ]
 
     static let insights: [StorageTarget] = [
+        .init(id: "pyenv-versions", title: "pyenv installed Python versions", detail: "Installed Python runtimes and virtual environments. Review each version and remove it with pyenv uninstall; SpaceMinder never removes this automatically.", url: home(".pyenv/versions"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "rbenv-versions", title: "rbenv installed Ruby versions", detail: "Installed Ruby runtimes and gems. Review each version and remove it with rbenv uninstall; SpaceMinder never removes this automatically.", url: home(".rbenv/versions"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "nodenv-versions", title: "nodenv installed Node versions", detail: "Installed Node.js runtimes and global packages. Review each version before removing it with nodenv uninstall.", url: home(".nodenv/versions"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "asdf-installs", title: "asdf installed runtimes", detail: "Installed language runtimes managed by asdf. Inspect versions and remove them through asdf uninstall.", url: home(".asdf/installs"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "mise-installs", title: "mise installed runtimes", detail: "Installed language runtimes managed by mise. Inspect versions and remove them through mise uninstall.", url: home(".local/share/mise/installs"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "nvm-versions", title: "nvm installed Node versions", detail: "Installed Node.js runtimes and global packages. Inspect versions and remove them with nvm uninstall.", url: home(".nvm/versions"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "volta-tools", title: "Volta installed tools", detail: "Installed Volta-managed Node, npm, pnpm, and Yarn tools. Inspect versions and remove them through Volta.", url: home(".volta/tools"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "rustup-toolchains", title: "rustup installed toolchains", detail: "Installed Rust toolchains and components. Inspect versions and remove them with rustup toolchain uninstall.", url: home(".rustup/toolchains"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "sdkman-candidates", title: "SDKMAN installed SDKs", detail: "Installed JVM and other SDKs. Inspect versions and remove them with SDKMAN before reclaiming space.", url: home(".sdkman/candidates"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "rvm-rubies", title: "RVM installed Rubies", detail: "Installed Ruby runtimes and gems. Inspect versions and remove them with RVM; SpaceMinder never removes this automatically.", url: home(".rvm/rubies"), kind: .directory, safety: .destructive, appsToQuit: []),
+        .init(id: "miniconda-packages", title: "Miniconda package cache", detail: "Downloaded and extracted Conda packages. Environments are not removed; use conda clean for cache-aware cleanup.", url: home("miniconda3/pkgs"), kind: .directory, safety: .redownloadable, appsToQuit: []),
+        .init(id: "anaconda-packages", title: "Anaconda package cache", detail: "Downloaded and extracted Conda packages. Environments are not removed; use conda clean for cache-aware cleanup.", url: home("anaconda3/pkgs"), kind: .directory, safety: .redownloadable, appsToQuit: []),
+        .init(id: "miniforge-packages", title: "Miniforge package cache", detail: "Downloaded and extracted Conda packages. Environments are not removed; use conda clean for cache-aware cleanup.", url: home("miniforge3/pkgs"), kind: .directory, safety: .redownloadable, appsToQuit: []),
         .init(id: "simulators", title: "Xcode simulators", detail: "Remove unused devices in Xcode → Window → Devices and Simulators.", url: home("Library/Developer/CoreSimulator"), kind: .directory, safety: .redownloadable, appsToQuit: ["Xcode"]),
         .init(id: "derived-data", title: "Xcode Derived Data", detail: "Build indexes and intermediates that Xcode can recreate.", url: home("Library/Developer/Xcode/DerivedData"), kind: .directory, safety: .redownloadable, appsToQuit: ["Xcode"]),
         .init(id: "ios-backups", title: "iPhone & iPad backups", detail: "Local device backups. Review the device and date before removal.", url: home("Library/Application Support/MobileSync/Backup"), kind: .directory, safety: .destructive, appsToQuit: []),
@@ -632,6 +671,17 @@ private enum DeveloperArtifactFinder {
         ".turbo": "Turborepo cache",
         ".venv": "Python virtual environment",
         "venv": "Python virtual environment",
+        "__pycache__": "Python bytecode cache",
+        ".pytest_cache": "pytest cache",
+        ".mypy_cache": "mypy type-check cache",
+        ".ruff_cache": "Ruff lint cache",
+        ".tox": "tox Python test environments",
+        ".nox": "nox Python test environments",
+        ".hypothesis": "Hypothesis test data cache",
+        ".eggs": "Python build dependencies",
+        "pip-wheel-metadata": "Python package build metadata",
+        "target": "Maven or JVM build output",
+        "coverage": "Test coverage output",
         "DerivedData": "Xcode derived data",
         "Pods": "CocoaPods dependencies",
         ".gradle": "Gradle cache"
@@ -646,13 +696,21 @@ private enum DeveloperArtifactFinder {
             guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants], errorHandler: { _, _ in true }) else { continue }
             for case let url as URL in enumerator {
                 guard let values = try? url.resourceValues(forKeys: keys), values.isDirectory == true,
-                      let category = categories[url.lastPathComponent] else { continue }
+                      let category = category(for: url) else { continue }
                 enumerator.skipDescendants()
                 artifacts.append(DeveloperArtifact(url: url, category: category, bytes: allocatedSize(of: url, keys: keys)))
                 if artifacts.count >= maxArtifacts { capped = true; break outer }
             }
         }
         return DeveloperArtifactResult(artifacts: artifacts.sorted { $0.bytes > $1.bytes }, wasCapped: capped)
+    }
+
+    private static func category(for url: URL) -> String? {
+        if let category = categories[url.lastPathComponent] { return category }
+        let parent = url.deletingLastPathComponent().lastPathComponent
+        if url.lastPathComponent == "bundle" && parent == "vendor" { return "Ruby Bundler dependencies" }
+        if url.lastPathComponent == "cache" && (parent == "vendor" || parent == "tmp") { return "Ruby project cache" }
+        return nil
     }
 
     private static func allocatedSize(of root: URL, keys: Set<URLResourceKey>) -> Int64 {

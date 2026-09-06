@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased — 0.1.0
+## Unreleased
 
+## 0.2.0 — 2026-09-05
+
+- Added cleanup targets for Python (pip, Poetry, uv), Java/JVM (Maven and Gradle), RubyGems/CocoaPods, Go, and Rust Cargo caches.
+- Added cleanup coverage for pyenv, rbenv, nodenv, asdf, mise, nvm, rustup, SDKMAN, and RVM downloads, plus scan-only review of their installed runtimes and Conda package caches.
+- Added Homebrew download-cache and log cleanup targets without touching installed formulae or Casks.
+- Expanded Developer Reclaim Planner coverage for Python bytecode/test tooling, Maven build output, and Ruby Bundler/project caches.
+
+## 0.1.0
 - Native SwiftUI storage dashboard and fixed safe-cleanup targets
 - Folder Explorer with physical-size inventory, Finder navigation, and reversible Trash actions
 - Finder-style lazy Explorer rendering, list/grid views, on-demand folder sizing, and attached-volume navigation
