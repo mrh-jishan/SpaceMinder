@@ -238,6 +238,7 @@ struct FolderExplorerView: View {
     @State private var visibleLimit = 100
     @State private var focusedEntryID: String?
     @State private var backHistory: [URL] = []
+    @State private var showBulkMeasureWarning = false
 
     private var inventory: DirectoryInventory? { model.inventory }
     private var focusedEntry: DirectoryEntry? { inventory?.entries.first { $0.id == focusedEntryID } }
@@ -274,6 +275,9 @@ struct FolderExplorerView: View {
         guard let root = inventory?.root else { return false }
         let home = FileManager.default.homeDirectoryForCurrentUser
         return root.path.hasPrefix(home.path + "/")
+    }
+    private var unmeasuredFolderCount: Int {
+        inventory?.entries.filter { $0.isDirectory && !$0.isMeasured }.count ?? 0
     }
 
     var body: some View {
@@ -336,6 +340,12 @@ struct FolderExplorerView: View {
                 destructiveRequest = nil
             }
         }
+        .alert("Measure \(unmeasuredFolderCount) folders?", isPresented: $showBulkMeasureWarning) {
+            Button("Measure all folders") { Task { await model.measureAllDirectories() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This recursively measures every direct subfolder in the current view. A large folder list can take time and use disk activity, but it does not modify any files.")
+        }
     }
 
     @ViewBuilder private func explorer(_ inventory: DirectoryInventory) -> some View {
@@ -353,6 +363,17 @@ struct FolderExplorerView: View {
                         .help("Measured size of the current folder")
                 }
                 if model.isInspectingDirectory { ProgressView().controlSize(.small) }
+                if model.isMeasuringAllDirectories {
+                    ProgressView(value: Double(model.bulkMeasurementCompleted), total: Double(max(1, model.bulkMeasurementTotal)))
+                        .frame(width: 72)
+                        .help("Measured \(model.bulkMeasurementCompleted) of \(model.bulkMeasurementTotal) folders")
+                } else if unmeasuredFolderCount > 0 {
+                    Button("Measure all \(unmeasuredFolderCount)") { requestBulkMeasurement() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(model.isMeasuringCurrentFolder || model.isInspectingDirectory)
+                        .help("Measure every direct subfolder in this view")
+                }
                 Button {
                     Task { await model.measureCurrentDirectory() }
                 } label: {
@@ -571,6 +592,15 @@ struct FolderExplorerView: View {
                 Task { await model.inspectDirectory(fallback) }
             }
         )
+    }
+
+    private func requestBulkMeasurement() {
+        guard unmeasuredFolderCount > 0 else { return }
+        if unmeasuredFolderCount > 25 {
+            showBulkMeasureWarning = true
+        } else {
+            Task { await model.measureAllDirectories() }
+        }
     }
 
     private func entrySizeLabel(_ entry: DirectoryEntry) -> String {

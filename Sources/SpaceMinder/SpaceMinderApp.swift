@@ -201,6 +201,9 @@ final class StorageViewModel: ObservableObject {
     @Published private(set) var measuringEntries = Set<String>()
     @Published private(set) var currentFolderMeasurement: DirectoryMeasurement?
     @Published var isMeasuringCurrentFolder = false
+    @Published var isMeasuringAllDirectories = false
+    @Published private(set) var bulkMeasurementCompleted = 0
+    @Published private(set) var bulkMeasurementTotal = 0
     @Published private(set) var mountedVolumes: [MountedVolume] = []
     @Published private(set) var snapshots: [StorageSnapshot] = []
     @Published private(set) var developerArtifacts: [DeveloperArtifact] = []
@@ -387,6 +390,20 @@ final class StorageViewModel: ObservableObject {
         if measurement.wasCapped {
             notice = "Current-folder measurement stopped after \(measurement.scannedFiles.formatted()) files. Choose a narrower folder for a complete total."
         }
+    }
+
+    func measureAllDirectories() async {
+        guard let current = inventory, !isMeasuringAllDirectories else { return }
+        let directories = current.entries.filter { $0.isDirectory && !$0.isMeasured }
+        guard !directories.isEmpty else { return }
+        isMeasuringAllDirectories = true
+        bulkMeasurementCompleted = 0
+        bulkMeasurementTotal = directories.count
+        for directory in directories {
+            await measureDirectoryEntry(directory)
+            bulkMeasurementCompleted += 1
+        }
+        isMeasuringAllDirectories = false
     }
 
     func scanDeveloperArtifacts(in roots: [URL]) async {

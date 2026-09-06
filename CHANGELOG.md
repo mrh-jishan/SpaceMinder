@@ -22,6 +22,7 @@
 - Explorer can measure the complete current folder on demand, and the sidebar Inspect Folder action opens the selected folder directly in Explorer
 - Duplicate Radar can move an individually reviewed duplicate copy to Trash after final confirmation
 - Destructive confirmation uses an exact six-digit numeric code
+- Explorer can measure all direct subfolders sequentially, with progress and an explicit warning before batches larger than 25 folders
 - Added nonempty-only local AI model cleanup targets for Ollama, LM Studio, PyTorch, and Whisper
 - Full Disk Access unavailable probes are now informational rather than misleading warnings
 - Full Disk Access concierge, universal Intel + Apple Silicon builds, direct-download DMG, and native icon
