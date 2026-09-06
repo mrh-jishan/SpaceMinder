@@ -326,6 +326,11 @@ struct FolderExplorerView: View {
             }
         }
         .frame(minWidth: 920, minHeight: 640)
+        .overlay {
+            if model.isInspectingDirectory {
+                ExplorerLoadingOverlay()
+            }
+        }
         .onChange(of: searchText) { _ in visibleLimit = 100 }
         .onChange(of: filter) { _ in visibleLimit = 100 }
         .onChange(of: sort) { _ in visibleLimit = 100 }
@@ -611,6 +616,20 @@ struct FolderExplorerView: View {
 }
 
 private enum ExplorerPresentation: Hashable { case list, grid, split }
+
+private struct ExplorerLoadingOverlay: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView().controlSize(.large)
+            Text("Loading folder…").font(.headline)
+            Text("Reading direct items and file metadata.").font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.ultraThinMaterial)
+        .transition(.opacity)
+    }
+}
 
 private enum ExplorerSort: String, CaseIterable, Identifiable {
     case name, largest, kind
