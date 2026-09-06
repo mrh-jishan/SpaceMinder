@@ -13,7 +13,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            Sidebar(selection: $workspace)
+            Sidebar(selection: $workspace, inspectFolder: inspectFolder)
         } detail: {
             Group {
                 switch workspace ?? .dashboard {
@@ -60,6 +60,17 @@ struct ContentView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func inspectFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a folder to inspect"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        workspace = .explorer
+        Task { await model.inspectDirectory(url) }
     }
 
     private var header: some View {
@@ -169,7 +180,7 @@ struct DestructiveActionRequest: Identifiable {
         self.title = title
         self.detail = detail
         self.items = items
-        self.code = "CONFIRM-\(Int.random(in: 1000...9999))"
+        self.code = String(format: "%06d", Int.random(in: 0...999_999))
         self.perform = perform
     }
 }
@@ -322,6 +333,7 @@ private struct ProWorkspaceView: View {
 private struct Sidebar: View {
     @EnvironmentObject private var model: StorageViewModel
     @Binding var selection: Workspace?
+    let inspectFolder: () -> Void
     var body: some View {
         List(selection: $selection) {
             Section {
@@ -334,7 +346,7 @@ private struct Sidebar: View {
                 Label("Pro toolkit", systemImage: "crown").tag(Workspace.pro)
             }
             Section("Tools") {
-                Button { model.addCustomPath() } label: { Label("Inspect folder", systemImage: "folder.badge.plus") }
+                Button(action: inspectFolder) { Label("Inspect folder", systemImage: "folder.badge.plus") }
                     .buttonStyle(.plain)
                 Label("Preferences", systemImage: "gearshape").tag(Workspace.preferences)
             }

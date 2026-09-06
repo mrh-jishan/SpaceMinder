@@ -199,6 +199,8 @@ final class StorageViewModel: ObservableObject {
     @Published private(set) var inventory: DirectoryInventory?
     @Published var isInspectingDirectory = false
     @Published private(set) var measuringEntries = Set<String>()
+    @Published private(set) var currentFolderMeasurement: DirectoryMeasurement?
+    @Published var isMeasuringCurrentFolder = false
     @Published private(set) var mountedVolumes: [MountedVolume] = []
     @Published private(set) var snapshots: [StorageSnapshot] = []
     @Published private(set) var developerArtifacts: [DeveloperArtifact] = []
@@ -297,6 +299,30 @@ final class StorageViewModel: ObservableObject {
         isScanningDuplicates = false
     }
 
+    func trashDuplicateFiles(_ files: [DuplicateFile]) {
+        var moved = 0
+        var failures = 0
+        let paths = Set(files.map { $0.url.path })
+        for file in files {
+            do {
+                try FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
+                moved += 1
+            } catch {
+                failures += 1
+            }
+        }
+        if moved > 0 {
+            duplicateGroups = duplicateGroups.compactMap { group in
+                let retained = group.files.filter { !paths.contains($0.url.path) }
+                guard retained.count > 1 else { return nil }
+                return DuplicateGroup(digest: group.digest, files: retained, bytesPerFile: group.bytesPerFile)
+            }
+        }
+        notice = failures == 0
+            ? "Moved \(moved) duplicate file(s) to Trash. They can be restored until Trash is emptied."
+            : "Moved \(moved) duplicate file(s); \(failures) could not be moved to Trash."
+    }
+
     func reveal(_ url: URL) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
@@ -331,6 +357,7 @@ final class StorageViewModel: ObservableObject {
 
     func inspectDirectory(_ url: URL) async {
         isInspectingDirectory = true
+        currentFolderMeasurement = nil
         let result = await Task.detached(priority: .userInitiated) { DirectoryInspector.inspect(url) }.value
         inventory = result
         isInspectingDirectory = false
@@ -347,6 +374,19 @@ final class StorageViewModel: ObservableObject {
         inventory = DirectoryInventory(root: current.root, entries: entries.sorted { $0.bytes > $1.bytes }, inaccessibleItems: current.inaccessibleItems, scannedFiles: measurement.scannedFiles, wasCapped: measurement.wasCapped)
         measuringEntries.remove(entry.id)
         if measurement.wasCapped { notice = "Measurement for \(entry.url.lastPathComponent) stopped after \(measurement.scannedFiles.formatted()) files. Choose a narrower folder for a complete size." }
+    }
+
+    func measureCurrentDirectory() async {
+        guard let root = inventory?.root, !isMeasuringCurrentFolder else { return }
+        isMeasuringCurrentFolder = true
+        currentFolderMeasurement = nil
+        let measurement = await Task.detached(priority: .userInitiated) { DirectoryInspector.measure(root) }.value
+        guard inventory?.root == root else { isMeasuringCurrentFolder = false; return }
+        currentFolderMeasurement = measurement
+        isMeasuringCurrentFolder = false
+        if measurement.wasCapped {
+            notice = "Current-folder measurement stopped after \(measurement.scannedFiles.formatted()) files. Choose a narrower folder for a complete total."
+        }
     }
 
     func scanDeveloperArtifacts(in roots: [URL]) async {

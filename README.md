@@ -15,10 +15,10 @@ Each release includes its versioned DMG, a permanent `SpaceMinder-latest.dmg` li
 - Native SwiftUI interface and Apple filesystem APIs
 - Physical allocated-size scanning, including sparse virtual disks
 - Fixed safe-cleanup allow-list; the interface cannot submit arbitrary deletion paths
-- Generated-code final confirmation for every destructive action, plus app-running checks for Chrome, Xcode, and Docker
+- Exact six-digit final confirmation for every destructive action, plus app-running checks for Chrome, Xcode, and Docker
 - Local cleanup history, custom **scan-only** folders, and optional launch-at-login
-- Finder-style Folder Explorer: visible Home/Desktop/Downloads/Documents shortcuts, 50-step back navigation, current-folder Finder opening, instant shallow metadata listings, lazy 100-item rendering, search, file/iCloud filters, name/size/kind sorting, list/grid/split-preview views, type-aware icons, Command/Control and Shift multi-selection, drag-out support, select-all/clear controls, double-click navigation, per-folder on-demand size measurement, and reversible Trash actions—including generated-code-confirmed removal of the current home-folder subdirectory with automatic return to its parent
-- Duplicate Radar: efficient two-pass SHA-256 matching that hashes only equal-size files; it is local-only and never deletes files
+- Finder-style Folder Explorer: visible Home/Desktop/Downloads/Documents shortcuts, 50-step back navigation, current-folder Finder opening and full-folder measurement, direct Inspect Folder routing, instant shallow metadata listings, lazy 100-item rendering, search, file/iCloud filters, name/size/kind sorting, list/grid/split-preview views, type-aware icons, Command/Control and Shift multi-selection, drag-out support, select-all/clear controls, double-click navigation, per-folder on-demand size measurement, and reversible Trash actions—including six-digit-confirmed removal of the current home-folder subdirectory with automatic return to its parent
+- Duplicate Radar: efficient two-pass SHA-256 matching that hashes only equal-size files; it is local-only and can move only an individually reviewed copy to Trash after six-digit confirmation
 - Developer Reclaim Planner: identifies re-creatable `node_modules`, Yarn/pnpm project stores, JavaScript build output, virtual environments, Xcode artifacts, and project caches before you remove anything
 - iCloud Drive local-copy offloading, which preserves iCloud originals while freeing downloaded local copies
 - Trash as a measured, first-class cleanup target; nonempty-only local AI model stores for Hugging Face, Ollama, LM Studio, PyTorch, and Whisper; re-downloadable npm, Yarn, Bun, node-gyp, and Corepack caches; and review-first pnpm stores

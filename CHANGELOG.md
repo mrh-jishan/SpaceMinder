@@ -18,6 +18,10 @@
 - Duplicate Radar and Developer Reclaim Planner now run from independent Discovery pages to avoid competing scans and interleaved results
 - Removed the redundant Discovery Overview; Duplicate Radar and Reclaim Planner are direct left-sidebar destinations
 - Explorer keeps a 50-step back history and can move the current home-folder subdirectory to Trash with generated-code confirmation, then return to its parent
+- Explorer rows and tiles now have full-surface selection hit areas with shared Command/Control and Shift range-selection behavior
+- Explorer can measure the complete current folder on demand, and the sidebar Inspect Folder action opens the selected folder directly in Explorer
+- Duplicate Radar can move an individually reviewed duplicate copy to Trash after final confirmation
+- Destructive confirmation uses an exact six-digit numeric code
 - Added nonempty-only local AI model cleanup targets for Ollama, LM Studio, PyTorch, and Whisper
 - Full Disk Access unavailable probes are now informational rather than misleading warnings
 - Full Disk Access concierge, universal Intel + Apple Silicon builds, direct-download DMG, and native icon

@@ -33,6 +33,7 @@ struct DiscoveryView: View {
     let tool: DiscoveryTool
     @State private var folders = DiscoveryView.defaultFolders
     @State private var expandedDuplicateID: String?
+    @State private var destructiveRequest: DestructiveActionRequest?
 
     init(onOpenExplorer: @escaping () -> Void, tool: DiscoveryTool) {
         self.onOpenExplorer = onOpenExplorer
@@ -52,6 +53,12 @@ struct DiscoveryView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .sheet(item: $destructiveRequest) { request in
+            SafetyConfirmationSheet(request: request) {
+                request.perform()
+                destructiveRequest = nil
+            }
+        }
     }
 
     private var duplicateWorkspace: some View {
@@ -136,9 +143,12 @@ struct DiscoveryView: View {
                     .font(.title2.weight(.bold)).monospacedDigit()
             }
             ForEach(model.duplicateGroups.prefix(30)) { group in
-                DuplicateGroupCard(group: group, isExpanded: expandedDuplicateID == group.id) {
-                    expandedDuplicateID = expandedDuplicateID == group.id ? nil : group.id
-                }
+                DuplicateGroupCard(
+                    group: group,
+                    isExpanded: expandedDuplicateID == group.id,
+                    toggle: { expandedDuplicateID = expandedDuplicateID == group.id ? nil : group.id },
+                    requestTrash: { requestDuplicateTrash([$0]) }
+                )
             }
         }
     }
@@ -177,7 +187,11 @@ struct DiscoveryView: View {
                         }
                         Spacer()
                         Text(ByteCountFormatter.string(fromByteCount: artifact.bytes, countStyle: .file)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-                        Button("Inspect") { Task { await model.inspectDirectory(artifact.url); onOpenExplorer() } }.buttonStyle(.link)
+                        Button("Inspect") {
+                            onOpenExplorer()
+                            Task { await model.inspectDirectory(artifact.url) }
+                        }
+                        .buttonStyle(.link)
                     }
                     .padding(.vertical, 4)
                 }
@@ -196,6 +210,16 @@ struct DiscoveryView: View {
         if panel.runModal() == .OK {
             folders = Array(Set(folders + panel.urls)).sorted { $0.path < $1.path }
         }
+    }
+
+    private func requestDuplicateTrash(_ files: [DuplicateFile]) {
+        guard !files.isEmpty else { return }
+        destructiveRequest = DestructiveActionRequest(
+            title: "Move selected duplicate file to Trash?",
+            detail: "This moves the exact selected duplicate copy to Trash. Review its path before continuing; it can be restored until Trash is emptied.",
+            items: files.map { "\($0.url.lastPathComponent) — \($0.url.deletingLastPathComponent().path)" },
+            perform: { model.trashDuplicateFiles(files) }
+        )
     }
 }
 
@@ -323,7 +347,20 @@ struct FolderExplorerView: View {
                 Image(systemName: "folder.fill").foregroundStyle(.indigo)
                 Text(inventory.root.path).font(.subheadline.monospaced()).lineLimit(1)
                 Spacer()
+                if let measurement = model.currentFolderMeasurement {
+                    Text(ByteCountFormatter.string(fromByteCount: measurement.bytes, countStyle: .file))
+                        .font(.caption.weight(.semibold)).monospacedDigit()
+                        .help("Measured size of the current folder")
+                }
                 if model.isInspectingDirectory { ProgressView().controlSize(.small) }
+                Button {
+                    Task { await model.measureCurrentDirectory() }
+                } label: {
+                    Label(model.isMeasuringCurrentFolder ? "Measuring…" : "Measure folder", systemImage: "ruler")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(model.isMeasuringCurrentFolder || model.isInspectingDirectory)
                 Button { Task { await model.inspectDirectory(inventory.root) } } label: { Image(systemName: "arrow.clockwise") }
                     .help("Refresh this folder")
                 Button { model.openInFinder(inventory.root) } label: { Image(systemName: "arrow.up.forward.app") }
@@ -446,13 +483,6 @@ struct FolderExplorerView: View {
         navigate(to: entry.url)
     }
 
-    private func toggle(_ entry: DirectoryEntry) {
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
-            if selected.contains(entry.id) { selected.remove(entry.id) } else { selected.insert(entry.id) }
-            focusedEntryID = entry.id
-        }
-    }
-
     private func select(_ entry: DirectoryEntry) {
         let modifiers = NSEvent.modifierFlags
         withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
@@ -484,17 +514,16 @@ struct FolderExplorerView: View {
     }
 
     @ViewBuilder private var entryList: some View {
-        List(displayedEntries, selection: $selected) { entry in
+        List(displayedEntries) { entry in
             ExplorerEntryRow(
                 entry: entry,
                 selected: selected.contains(entry.id),
                 isMeasuring: model.measuringEntries.contains(entry.id),
-                toggle: { toggle(entry) },
+                select: { select(entry) },
                 open: { open(entry) },
                 reveal: { model.reveal(entry.url) },
                 measure: { Task { await model.measureDirectoryEntry(entry) } }
             )
-            .tag(entry.id)
         }
         .listStyle(.inset)
     }
@@ -592,14 +621,14 @@ private struct ExplorerEntryRow: View {
     let entry: DirectoryEntry
     let selected: Bool
     let isMeasuring: Bool
-    let toggle: () -> Void
+    let select: () -> Void
     let open: () -> Void
     let reveal: () -> Void
     let measure: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            Button(action: toggle) { Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? .indigo : .secondary) }.buttonStyle(.plain)
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? .indigo : .secondary)
             ExplorerEntryIcon(entry: entry, font: .body)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.url.lastPathComponent).lineLimit(1)
@@ -616,6 +645,7 @@ private struct ExplorerEntryRow: View {
         }
         .contentShape(Rectangle())
         .background(selected ? .indigo.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .simultaneousGesture(TapGesture().onEnded(select))
         .onTapGesture(count: 2, perform: open)
         .onDrag { NSItemProvider(object: entry.url as NSURL) }
         .animation(.spring(response: 0.22, dampingFraction: 0.86), value: selected)
@@ -633,7 +663,7 @@ private struct ExplorerEntryTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack { ExplorerEntryIcon(entry: entry, font: .title2); Spacer(); Button(action: select) { Image(systemName: selected ? "checkmark.circle.fill" : "circle") }.buttonStyle(.plain) }
+            HStack { ExplorerEntryIcon(entry: entry, font: .title2); Spacer(); Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? .indigo : .secondary) }
             Text(entry.url.lastPathComponent).font(.subheadline.weight(.medium)).lineLimit(2)
             if entry.isDirectory && !entry.isMeasured { Button(isMeasuring ? "Measuring…" : "Measure size", action: measure).buttonStyle(.link).disabled(isMeasuring) }
             else { Text(ByteCountFormatter.string(fromByteCount: entry.bytes, countStyle: .file)).font(.caption.monospaced()).foregroundStyle(.secondary) }
@@ -642,7 +672,8 @@ private struct ExplorerEntryTile: View {
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
         .background(selected ? .indigo.opacity(0.10) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .onTapGesture { select() }
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .simultaneousGesture(TapGesture().onEnded(select))
         .onTapGesture(count: 2, perform: open)
         .onDrag { NSItemProvider(object: entry.url as NSURL) }
         .animation(.spring(response: 0.22, dampingFraction: 0.86), value: selected)
@@ -742,6 +773,7 @@ private struct DuplicateGroupCard: View {
     let group: DuplicateGroup
     let isExpanded: Bool
     let toggle: () -> Void
+    let requestTrash: (DuplicateFile) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -777,6 +809,7 @@ private struct DuplicateGroupCard: View {
                         }
                         Spacer()
                         Button("Reveal") { model.reveal(file.url) }.buttonStyle(.link)
+                        Button("Trash", role: .destructive) { requestTrash(file) }.buttonStyle(.link)
                     }
                     .font(.subheadline)
                 }
