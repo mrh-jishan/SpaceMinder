@@ -67,8 +67,14 @@ jobs:
           plutil -lint dist/SpaceMinder.app/Contents/Info.plist
           xcrun lipo -info dist/SpaceMinder.app/Contents/MacOS/SpaceMinder | grep -E 'arm64.*x86_64|x86_64.*arm64'
           codesign --verify --deep --strict --verbose=2 dist/SpaceMinder.app
-          test -s dist/*.dmg
-          test -s dist/*.dmg.sha256
+          shopt -s nullglob
+          dmg_files=(dist/*.dmg)
+          checksum_files=(dist/*.dmg.sha256)
+          test "${#dmg_files[@]}" -gt 0
+          test "${#checksum_files[@]}" -gt 0
+          for file in "${dmg_files[@]}" "${checksum_files[@]}"; do
+            test -s "$file"
+          done
 
       - name: Upload installable CI artifact
         uses: actions/upload-artifact@v4
